@@ -1,0 +1,1176 @@
+import { Subject } from 'rxjs';
+import VoterActions from '../../actions/VoterActions'; // eslint-disable-line import/no-cycle
+import stringContains from '../utils/stringContains';
+import webAppConfig from '../../config';
+import VoterStore from '../../stores/VoterStore'; // eslint-disable-line import/no-cycle
+import { dumpObjProps } from '../../utils/appleSiliconUtils';
+import $ajax from '../../utils/service';
+
+const subject = new Subject();
+
+function isCordovaLocal () {
+  const { cordova } = window;
+  return cordova !== undefined;
+}
+
+export const messageService = {
+  sendMessage: (message) => subject.next({ text: message }),
+  clearMessages: () => subject.next(),
+  getMessage: () => subject.asObservable(),
+};
+
+const nonFluxState = {
+  activityTidbitWeVoteIdForDrawer: '',
+  blockCampaignXRedirectOnSignIn: false, // When signing in from the header, don't mark a campaign as supported
+  blockChallengeRedirectOnSignIn: false, // When signing in from the header, don't mark a challenge as supported
+  campaignXWeVoteIdBeingViewed: '',
+  challengeParticipantNameWithHighestRankByChallengeWeVoteId: {}, // Key is challengeWeVoteId, value is name for voter with the highest rank for that challenge
+  challengeParticipantRankOfVoterByChallengeWeVoteId: {}, // Key is challengeWeVoteId, value is rank of voter for that challenge
+  chosenDomainTypeIsCampaign: false,
+  chosenGoogleAnalyticsTrackingID: false,
+  chosenPreventSharingOpinions: false,
+  chosenReadyIntroductionText: '',
+  chosenReadyIntroductionTitle: '',
+  chosenSiteLogoUrl: '',
+  chosenWebsiteName: '',
+  currentPathname: '',
+  drawerOpenDict: {},
+  flashCursorEnabled: false,
+  getStartedMode: '',
+  getVoterGuideSettingsDashboardEditMode: '',
+  googleAnalyticsEnabled: false,
+  googleAnalyticsPending: false,
+  hideOrganizationModalBallotItemInfo: false,
+  hideOrganizationModalPositions: false,
+  hideWeVoteLogo: false,
+  hostname: '',
+  observableUpdateCounter: 0,
+  organizationModalBallotItemWeVoteId: '',
+  openReplayEnabled: false,
+  openReplayPending: false,
+  openReplayTracker: undefined,
+  openReplayVoterIsSignedIn: '',
+  openReplayVoterWeVoteId: '',
+  pendingSnackMessage: '',
+  pendingSnackSeverity: '',
+  politicianWeVoteIdBeingViewed: '',
+  recommendedCampaignListFirstRetrieveInitiated: false,
+  scrolledDown: false,
+  scrolledDownDrawer: false,
+  setUpAccountBackLinkPath: '',
+  setUpAccountEntryPath: '',
+  whatAndHowMuchToShare: '',
+  sharedItemCode: '',
+  showActivityTidbitDrawer: false,
+  showAddBallotItemModal: false,
+  showAdviserIntroModal: false,
+  showAskFriendsModal: false,
+  showBallotChoicesAndSettingsModal: false,
+  showChooseOrOpposeIntroModal: false,
+  showChooseOrOpposeSignInModal: false,
+  showClaimProfileWithEmailModal: false,
+  showEditPositionModal: false,
+  editPositionModalPoliticianWeVoteId: '',
+  editPositionModalSetPublic: false,
+  editPositionModalVisibilityOnly: false,
+  showClaimProfileWithOtherWaysModal: false,
+  functionToCallAfterProfileComplete: null,
+  showCompleteYourProfileModalDict: {},
+  showNotificationBannerAboveHeader: false,
+  showOfficeBannerAboveHeader: false,
+  showEditAddressButton: false,
+  showElectionsWithOrganizationVoterGuidesModal: false,
+  showHeader: 0,
+  showHowItWorksModal: false,
+  showNewVoterGuideModal: false,
+  showOrganizationModal: false,
+  showPaidAccountUpgradeModal: false,
+  showPersonalizedScoreIntroModal: false,
+  showPositionDrawer: false,
+  showSelectBallotModal: false,
+  showSelectBallotModalEditAddress: false,
+  showShareModal: false,
+  showSharedItemModal: false,
+  showSignInModal: false,
+  showTwitterLandingPage: false,
+  showVoterPlanModal: false,
+  signInStateChanged: false,
+  siteConfigurationHasBeenRetrieved: false,
+  siteOwnerOrganizationWeVoteId: '',
+  storeSignInStartFullUrl: false,
+  viewingOrganizationVoterGuide: false,
+  voterBallotItemsRetrieveHasBeenCalled: false,
+  voterExternalIdHasBeenSavedOnce: {}, // Dict with externalVoterId and membershipOrganizationWeVoteId as keys, and true/false as value
+  voterFirstRetrieveInitiated: false,
+
+  // Asynchronous negative feedback modal state:
+  askedVoterToReviewApp: false,
+  negativeFeedbackPage: 'NONE',
+  showingNegativeFeedbackModal: false,
+  showNegativeFeedbackModal: 'NONE',
+};
+
+const negativeFeedbackPages = ['CAMPAIGN', 'POLITICAL', 'POSITION', 'ADDFRIEND', 'ITEM', 'NONE'];
+
+export default {
+  blockCampaignXRedirectOnSignIn () {
+    return nonFluxState.blockCampaignXRedirectOnSignIn;
+  },
+
+  blockChallengeRedirectOnSignIn () {
+    return nonFluxState.blockChallengeRedirectOnSignIn;
+  },
+
+  getActivityTidbitWeVoteIdForDrawer () {
+    return nonFluxState.activityTidbitWeVoteIdForDrawer;
+  },
+
+  getAskedVoterToReviewApp () {
+    return nonFluxState.askedVoterToReviewApp;
+  },
+
+  getCampaignXWeVoteIdBeingViewed () {
+    return nonFluxState.campaignXWeVoteIdBeingViewed;
+  },
+
+  getChallengeParticipantNameWithHighestRankByChallengeWeVoteId (challengeWeVoteId) {
+    if (challengeWeVoteId && challengeWeVoteId in nonFluxState.challengeParticipantNameWithHighestRankByChallengeWeVoteId) {
+      return nonFluxState.challengeParticipantNameWithHighestRankByChallengeWeVoteId[challengeWeVoteId];
+    } else {
+      return '';
+    }
+  },
+
+  getChallengeParticipantRankOfVoterByChallengeWeVoteId (challengeWeVoteId) {
+    if (challengeWeVoteId && challengeWeVoteId in nonFluxState.challengeParticipantRankOfVoterByChallengeWeVoteId) {
+      return nonFluxState.challengeParticipantRankOfVoterByChallengeWeVoteId[challengeWeVoteId];
+    } else {
+      return 0;
+    }
+  },
+
+  getChosenAboutOrganizationExternalUrl () {
+    return nonFluxState.chosenAboutOrganizationExternalUrl;
+  },
+
+  getChosenDomainTypeIsCampaign () {
+    return nonFluxState.chosenDomainTypeIsCampaign;
+  },
+
+  getChosenDomainTypeIsChallenge () {
+    return false;
+  },
+
+  getChosenGoogleAnalyticsTrackingID () {
+    return nonFluxState.chosenGoogleAnalyticsTrackingID;
+  },
+
+  getChosenPreventSharingOpinions () {
+    return nonFluxState.chosenPreventSharingOpinions;
+  },
+
+  getChosenReadyIntroductionText () {
+    return nonFluxState.chosenReadyIntroductionText;
+  },
+
+  getChosenReadyIntroductionTitle () {
+    return nonFluxState.chosenReadyIntroductionTitle;
+  },
+
+  getChosenSiteLogoUrl () {
+    return nonFluxState.chosenSiteLogoUrl;
+  },
+
+  getChosenWebsiteName () {
+    return nonFluxState.chosenWebsiteName || 'WeVote.US'; // Used to be campaigns.WeVote.US on campaigns site
+  },
+
+  getDrawerOpen (drawerOpenGlobalVariableName) {
+    if (nonFluxState.drawerOpenDict) {
+      if (drawerOpenGlobalVariableName in nonFluxState.drawerOpenDict) {
+        return nonFluxState.drawerOpenDict[drawerOpenGlobalVariableName];
+      }
+    }
+    return false;
+  },
+  getFlashCursorEnabled () {
+    return nonFluxState.flashCursorEnabled;
+  },
+
+  getPoliticianWeVoteIdBeingViewed () {
+    return nonFluxState.politicianWeVoteIdBeingViewed;
+  },
+
+  getShowingNegativeFeedbackModal () {
+    return nonFluxState.showingNegativeFeedbackModal;
+  },
+
+  getShowClaimProfileWithEmailModal () {
+    return nonFluxState.showClaimProfileWithEmailModal;
+  },
+
+  getShowEditPositionModal () {
+    return nonFluxState.showEditPositionModal;
+  },
+
+  getEditPositionModalPoliticianWeVoteId () {
+    return nonFluxState.editPositionModalPoliticianWeVoteId;
+  },
+
+  getEditPositionModalSetPublic () {
+    return nonFluxState.editPositionModalSetPublic;
+  },
+
+  getEditPositionModalVisibilityOnly () {
+    return nonFluxState.editPositionModalVisibilityOnly;
+  },
+
+  getShowClaimProfileWithOtherWaysModal () {
+    return nonFluxState.showClaimProfileWithOtherWaysModal;
+  },
+
+  getCurrentPathname () {
+    return nonFluxState.currentPathname;
+  },
+
+  getPositionDrawerBallotItemWeVoteId () {
+    return nonFluxState.positionDrawerBallotItemWeVoteId;
+  },
+
+  getPositionDrawerOrganizationWeVoteId () {
+    return nonFluxState.positionDrawerOrganizationWeVoteId;
+  },
+
+  getGlobalVariableState (globalVariableName) {
+    return nonFluxState[globalVariableName];
+  },
+
+  getGoogleAnalyticsEnabled () {
+    return nonFluxState.googleAnalyticsEnabled;
+  },
+
+  getGoogleAnalyticsPending () {
+    return nonFluxState.googleAnalyticsPending;
+  },
+
+  getOpenReplayEnabled () {
+    return nonFluxState.openReplayEnabled;
+  },
+
+  getOpenReplayPending () {
+    return nonFluxState.openReplayPending;
+  },
+
+  getOpenReplayStateCode () {
+    return nonFluxState.stateCode;
+  },
+
+  getOpenReplayStateCodeFromIpAddress () {
+    return nonFluxState.stateCodeFromIpAddress;
+  },
+
+  getOpenReplayTracker () {
+    return nonFluxState.openReplayTracker;
+  },
+
+  getOpenReplayVoterIsSignedIn () {
+    return nonFluxState.openReplayVoterIsSignedIn;
+  },
+
+  getOpenReplayVoterWeVoteId () {
+    return nonFluxState.openReplayVoterWeVoteId;
+  },
+
+  getHideWeVoteLogo () {
+    return nonFluxState.hideWeVoteLogo;
+  },
+
+  getHeaderProfileSection () {
+    return nonFluxState.headerProfileSection;
+  },
+
+  getHostname () {
+    return nonFluxState.hostname || '';
+  },
+
+  getNegativeFeedbackPage () {
+    return nonFluxState.negativeFeedbackPage;
+  },
+
+  getOrganizationModalBallotItemWeVoteId () {
+    return nonFluxState.organizationModalBallotItemWeVoteId;
+  },
+
+  getPendingSnackMessage () {
+    return nonFluxState.pendingSnackMessage;
+  },
+
+  getPendingSnackSeverity () {
+    return nonFluxState.pendingSnackSeverity;
+  },
+
+  getScrolledDown () {
+    return nonFluxState.scrolledDown;
+  },
+
+  getScrolledDownDrawer () {
+    return nonFluxState.scrolledDownDrawer;
+  },
+
+  getSetUpAccountBackLinkPath () {
+    return nonFluxState.setUpAccountBackLinkPath;
+  },
+
+  getSetUpAccountEntryPath () {
+    return nonFluxState.setUpAccountEntryPath;
+  },
+
+  getSharedItemCode () {
+    return nonFluxState.sharedItemCode;
+  },
+
+  getShareModalStep () {
+    // console.log('AppObservableStore shareModalStep:', nonFluxState.shareModalStep);
+    return nonFluxState.shareModalStep;
+  },
+
+  getShowNotificationBannerAboveHeader () {
+    return nonFluxState.showNotificationBannerAboveHeader;
+  },
+
+  setShowNotificationBannerAboveHeader (show) {
+    nonFluxState.showNotificationBannerAboveHeader = show;
+    messageService.sendMessage('state updated showNotificationBannerAboveHeader');
+  },
+
+  getShowOfficeBannerAboveHeader () {
+    return nonFluxState.showOfficeBannerAboveHeader;
+  },
+
+  setShowOfficeBannerAboveHeader (show) {
+    nonFluxState.showOfficeBannerAboveHeader = show;
+    messageService.sendMessage('state updated showOfficeBannerAboveHeader');
+  },
+
+  getWeVoteRootURL () {
+    const { location: { hostname, origin } } = window;
+    if (hostname === 'localhost' || hostname === 'quality.wevote.us' || hostname === 'wevotedeveloper.com') {
+      return origin; // ex/ https://localhost:3000
+    } else {
+      return 'https://wevote.us';
+    }
+  },
+
+  getWhatAndHowMuchToShare () {
+    // console.log('getWhatAndHowMuchToShare:', nonFluxState.whatAndHowMuchToShare);
+    return nonFluxState.whatAndHowMuchToShare;
+  },
+
+  getShowTwitterLandingPage () {
+    // console.log('AppObservableStore getShowTwitterLandingPage:', nonFluxState.showTwitterLandingPage);
+    return nonFluxState.showTwitterLandingPage;
+  },
+
+  getSignInStateChanged () {
+    return nonFluxState.signInStateChanged;
+  },
+
+  getSiteOwnerOrganizationWeVoteId () {
+    return nonFluxState.siteOwnerOrganizationWeVoteId;
+  },
+
+  getStartedMode () {
+    return nonFluxState.getStartedMode;
+  },
+
+  getVoterGuideSettingsDashboardEditMode () {
+    return nonFluxState.getVoterGuideSettingsDashboardEditMode;
+  },
+
+  hideOrganizationModalBallotItemInfo () {
+    return nonFluxState.hideOrganizationModalBallotItemInfo;
+  },
+
+  hideOrganizationModalPositions () {
+    return nonFluxState.hideOrganizationModalPositions;
+  },
+
+  inPrivateLabelMode () {
+    return Boolean(nonFluxState.chosenSiteLogoUrl || false);
+  },
+
+  isSnackMessagePending () {
+    return nonFluxState.pendingSnackMessage && nonFluxState.pendingSnackMessage.length > 0;
+  },
+
+  isOnWeVoteRootUrl () {
+    // console.log('AppObservableStore nonFluxState.onWeVoteRootUrl: ', nonFluxState.onWeVoteRootUrl,
+    //   ', isOnWeVoteRootUrl weVoteURL: ', weVoteURL,
+    //   ', isCordovaLocal(): ', isCordovaLocal());
+
+    const { location: { href: hrefValue } } = window;
+    // console.log('AppObservableStore hrefValue: ', hrefValue);
+    const hrefValueLowerCase = (hrefValue) ? hrefValue.toLowerCase() : '';
+    return (nonFluxState.onWeVoteRootUrl || false) ||
+      isCordovaLocal() ||
+      stringContains('quality.wevote.us:', hrefValueLowerCase) ||
+      stringContains('www.wevote.us:', hrefValueLowerCase) ||
+      stringContains('//wevote.us:', hrefValueLowerCase) ||
+      stringContains('wevote.org:', hrefValueLowerCase) ||
+      stringContains('localhost:', hrefValueLowerCase) ||
+      stringContains('wevotedeveloper.com:', hrefValueLowerCase) ||
+      stringContains('ngrok.io', hrefValueLowerCase) ||
+      stringContains('ngrok-free.app', hrefValueLowerCase);
+  },
+
+  isOnFacebookJsSdkHostDomainList () {
+    const { hostname } = window.location;
+    const hostnameLowerCase = (hostname) ? hostname.toLowerCase() : '';
+    const hostnameFiltered = hostnameLowerCase.replace('www.', '');
+    return hostnameFiltered === 'wevote.us' ||
+      hostnameFiltered === 'quality.wevote.us' ||
+      hostnameFiltered === 'localhost' ||
+      hostnameFiltered === 'wevotedeveloper.com' ||
+      isCordovaLocal() ||
+      window.location.href.includes('ngrok');
+  },
+
+  isOnWeVotePartnerSubdomainUrl () {
+    // console.log('AppObservableStore isOnWeVotePartnerSubdomainUrl: ', nonFluxState.onWeVotePartnerSubdomainUrl);
+    return nonFluxState.onWeVotePartnerSubdomainUrl;
+  },
+
+  isOnPartnerUrl () {
+    // console.log('AppObservableStore onWeVotePartnerSubdomainUrl: ', nonFluxState.onWeVotePartnerSubdomainUrl, ', onChosenFullDomainUrl:', nonFluxState.onChosenFullDomainUrl);
+    return nonFluxState.onWeVotePartnerSubdomainUrl || nonFluxState.onChosenFullDomainUrl;
+  },
+
+  isVoterAdminForThisUrl (linkedOrganizationWeVoteId) {
+    // const linkedOrganizationWeVoteId = VoterStore.getLinkedOrganizationWeVoteId();
+    return nonFluxState.siteOwnerOrganizationWeVoteId === linkedOrganizationWeVoteId;
+  },
+
+  isOnFacebookSupportedDomainUrl () {
+    return nonFluxState.onFacebookSupportedDomainUrl;
+  },
+
+  isOnChosenFullDomainUrl () {
+    return nonFluxState.onChosenFullDomainUrl;
+  },
+
+  recommendedCampaignListFirstRetrieveInitiated () {
+    return nonFluxState.recommendedCampaignListFirstRetrieveInitiated;
+  },
+
+  incrementObservableUpdateCounter () {
+    nonFluxState.observableUpdateCounter += 1;
+    messageService.sendMessage('state incremented ObservableUpdateCounter');
+  },
+
+  setActivityTidbitWeVoteIdForDrawer (activityTidbitWeVoteId) {
+    nonFluxState.activityTidbitWeVoteIdForDrawer = activityTidbitWeVoteId;
+    messageService.sendMessage('state updated activityTidbitWeVoteIdForDrawer');
+  },
+
+  setActivityTidbitWeVoteIdForDrawerAndOpen (setActivityTidbitWeVoteIdForDrawerAndOpen) {
+    nonFluxState.activityTidbitWeVoteIdForDrawerAndOpen = setActivityTidbitWeVoteIdForDrawerAndOpen;
+    messageService.sendMessage('state updated activityTidbitWeVoteIdForDrawerAndOpen');
+  },
+
+  setAskedVoterToReviewApp (ask) {
+    nonFluxState.askedVoterToReviewApp = ask;
+    messageService.sendMessage('state updated askedVoterToReviewApp');
+  },
+
+  setGlobalVariableState (globalVariableName, newState) {
+    nonFluxState[globalVariableName] = newState;
+    messageService.sendMessage(`state updated ${globalVariableName}`);
+  },
+
+  setBlockCampaignXRedirectOnSignIn (value) {
+    nonFluxState.blockCampaignXRedirectOnSignIn = value;
+    messageService.sendMessage('state updated blockCampaignXRedirectOnSignIn');
+  },
+
+  setBlockChallengeRedirectOnSignIn (value) {
+    nonFluxState.blockChallengeRedirectOnSignIn = value;
+    messageService.sendMessage('state updated blockChallengeRedirectOnSignIn');
+  },
+
+  setCampaignXWeVoteIdBeingViewed (campaignXWeVoteId) {
+    nonFluxState.campaignXWeVoteIdBeingViewed = campaignXWeVoteId;
+    messageService.sendMessage('state updated campaignXWeVoteIdBeingViewed');
+  },
+
+  setChallengeParticipantRankOfVoter (challengeWeVoteId, rank) {
+    // console.log('setChallengeParticipantRankOfVoter: ', challengeWeVoteId, ', rank: ', rank);
+    nonFluxState.challengeParticipantRankOfVoterByChallengeWeVoteId[challengeWeVoteId] = rank;
+    messageService.sendMessage('state updated challengeParticipantRankOfVoterByChallengeWeVoteId');
+  },
+
+  setChallengeParticipantNameWithHighestRank (challengeWeVoteId, voterName) {
+    // console.log('setChallengeParticipantNameWithHighestRank: ', challengeWeVoteId, ', voterName: ', voterName);
+    nonFluxState.challengeParticipantNameWithHighestRankByChallengeWeVoteId[challengeWeVoteId] = voterName;
+    messageService.sendMessage('state updated challengeParticipantNameWithHighestRankByChallengeWeVoteId');
+  },
+
+  setPoliticianWeVoteIdBeingViewed (politicianWeVoteId) {
+    nonFluxState.politicianWeVoteIdBeingViewed = politicianWeVoteId;
+    messageService.sendMessage('state updated politicianWeVoteIdBeingViewed');
+  },
+
+  setShowingNegativeFeedbackModal (show) {
+    nonFluxState.showingNegativeFeedbackModal = show;
+    // messageService.sendMessage('state updated showingNegativeFeedbackModal');
+  },
+
+  setShowClaimProfileWithEmailModal (show) {
+    nonFluxState.showClaimProfileWithEmailModal = show;
+    messageService.sendMessage('state updated showClaimProfileWithEmailModal');
+  },
+
+  setEditPositionModalSetPublic (value) {
+    nonFluxState.editPositionModalSetPublic = value;
+  },
+
+  setEditPositionModalVisibilityOnly (value) {
+    nonFluxState.editPositionModalVisibilityOnly = value;
+  },
+
+  setShowEditPositionModal (show, politicianWeVoteId = '', setPublic = false, visibilityOnly = false) {
+    nonFluxState.showEditPositionModal = show;
+    nonFluxState.editPositionModalPoliticianWeVoteId = show ? politicianWeVoteId : '';
+    nonFluxState.editPositionModalSetPublic = show ? setPublic : false;
+    nonFluxState.editPositionModalVisibilityOnly = show ? visibilityOnly : false;
+    messageService.sendMessage('state updated showEditPositionModal');
+  },
+
+  setShowClaimProfileWithOtherWaysModal (show) {
+    nonFluxState.showClaimProfileWithOtherWaysModal = show;
+    messageService.sendMessage('state updated showClaimProfileWithOtherWaysModal');
+  },
+
+  setCurrentPathname (currentPathname) {
+    nonFluxState.currentPathname = currentPathname;
+    messageService.sendMessage('state updated currentPathname');
+  },
+
+  setDrawerOpen (drawerOpenGlobalVariableName, drawerOpen = false) {
+    const updatedDrawerOpenDict = nonFluxState.drawerOpenDict || {};
+    updatedDrawerOpenDict[drawerOpenGlobalVariableName] = drawerOpen;
+    nonFluxState.drawerOpenDict = updatedDrawerOpenDict;
+    messageService.sendMessage('state updated drawerOpenDict');
+  },
+  setFlashCursorEnabled (flashCursorEnabled) {
+    nonFluxState.flashCursorEnabled = flashCursorEnabled;
+  },
+
+  setEvaluateHeaderDisplay () {
+    // Force the Header to evaluate whether it should display
+    nonFluxState.showHeader = Date.now();
+    messageService.sendMessage('state updated showHeader');
+  },
+
+  setGetStartedMode (getStartedMode) {
+    nonFluxState.getStartedMode = getStartedMode;
+    messageService.sendMessage('state updated getStartedMode');
+  },
+
+  setHeaderProfileSection (headerProfileSection) {
+    nonFluxState.headerProfileSection = headerProfileSection;
+    messageService.sendMessage('state updated headerProfileSection');
+  },
+
+  setHideOrganizationModalBallotItemInfo (hide) {
+    nonFluxState.hideOrganizationModalBallotItemInfo = hide;
+    messageService.sendMessage('state updated hideOrganizationModalBallotItemInfo');
+  },
+
+  setHideOrganizationModalPositions (hide) {
+    nonFluxState.hideOrganizationModalPositions = hide;
+    messageService.sendMessage('state updated hideOrganizationModalPositions');
+  },
+
+  setGoogleAnalyticsEnabled (enabled) {
+    nonFluxState.googleAnalyticsEnabled = enabled;
+    messageService.sendMessage('state updated googleAnalyticsEnabled');
+  },
+
+  setGoogleAnalyticsPending (enabled) {
+    nonFluxState.googleAnalyticsPending = enabled;
+    messageService.sendMessage('state updated googleAnalyticsPending');
+  },
+
+  setOpenReplayEnabled (enabled) {
+    nonFluxState.openReplayEnabled = enabled;
+    messageService.sendMessage('state updated openReplayEnabled');
+  },
+
+  setOpenReplayPending (enabled) {
+    nonFluxState.openReplayPending = enabled;
+    messageService.sendMessage('state updated openReplayPending');
+  },
+
+  setOpenReplayStateCode (stateCode) {
+    nonFluxState.stateCode = stateCode;
+    messageService.sendMessage('state updated stateCode');
+  },
+
+  setOpenReplayStateCodeFromIpAddress (stateCodeFromIpAddress) {
+    nonFluxState.stateCodeFromIpAddress = stateCodeFromIpAddress;
+    messageService.sendMessage('state updated stateCodeFromIpAddress');
+  },
+
+  setOpenReplayTracker (tracker) {
+    nonFluxState.openReplayTracker = tracker;
+    messageService.sendMessage('state updated openReplayTracker');
+  },
+
+  setOpenReplayVoterIsSignedIn (value) {
+    nonFluxState.openReplayVoterIsSignedIn = value;
+    messageService.sendMessage('state updated openReplayVoterIsSignedIn');
+  },
+
+  setOpenReplayVoterWeVoteId (value) {
+    nonFluxState.openReplayVoterWeVoteId = value;
+    messageService.sendMessage('state updated openReplayVoterWeVoteId');
+  },
+
+  setOrganizationModalBallotItemWeVoteId (ballotItemWeVoteId) {
+    nonFluxState.organizationModalBallotItemWeVoteId = ballotItemWeVoteId;
+    messageService.sendMessage('state updated organizationModalBallotItemWeVoteId');
+  },
+
+  setPendingSnackMessage (message, severity) {
+    nonFluxState.pendingSnackMessage = message;
+    nonFluxState.pendingSnackSeverity = severity;
+  },
+
+  setPositionDrawerBallotItemWeVoteId (ballotItemWeVoteId) {
+    nonFluxState.positionDrawerBallotItemWeVoteId = ballotItemWeVoteId;
+    messageService.sendMessage('state updated positionDrawerBallotItemWeVoteId');
+  },
+
+  setPositionDrawerOrganizationWeVoteId (organizationWeVoteId) {
+    nonFluxState.positionDrawerOrganizationWeVoteId = organizationWeVoteId;
+    messageService.sendMessage('state updated positionDrawerOrganizationWeVoteId');
+  },
+
+  setRecommendedCampaignListFirstRetrieveInitiated (value) {
+    nonFluxState.recommendedCampaignListFirstRetrieveInitiated = value;
+    messageService.sendMessage('state updated recommendedCampaignListFirstRetrieveInitiated');
+  },
+
+  setScrolled (scrolledDown) {
+    nonFluxState.scrolledDown = scrolledDown;
+    messageService.sendMessage('state updated scrolledDown');
+  },
+
+  setScrolledDownDrawer (scrolledDown) {
+    nonFluxState.scrolledDownDrawer = scrolledDown;
+    messageService.sendMessage('state updated scrolledDownDrawer');
+  },
+
+  setSetUpAccountBackLinkPath (backLinkPath) {
+    // console.log('setSetUpAccountBackLinkPath, step:', step);
+    nonFluxState.setUpAccountBackLinkPath = backLinkPath;
+    messageService.sendMessage('state updated setUpAccountBackLinkPath');
+  },
+
+  setSetUpAccountEntryPath (entryPath) {
+    // console.log('setSetUpAccountEntryPath, step:', step);
+    nonFluxState.setUpAccountEntryPath = entryPath;
+    messageService.sendMessage('state updated setSetUpAccountEntryPath');
+  },
+
+  setShowActivityTidbitDrawer (show) {
+    nonFluxState.showActivityTidbitDrawer = show;
+    messageService.sendMessage('state updated showActivityTidbitDrawer');
+  },
+
+  setShowAddBallotItemModal (show) {
+    nonFluxState.showAddBallotItemModal = show;
+    messageService.sendMessage('state updated showAddBallotItemModal');
+  },
+
+  setShowAdviserIntroModal (show) {
+    nonFluxState.showAdviserIntroModal = show;
+    messageService.sendMessage('state updated showAdviserIntroModal');
+  },
+
+  setShowAskFriendsModal (show) {
+    nonFluxState.showAskFriendsModal = show;
+    messageService.sendMessage('state updated showAskFriendsModal');
+  },
+
+  setShowNegativeFeedbackModal (show) {
+    nonFluxState.showNegativeFeedbackModal = show;
+    messageService.sendMessage(`state updated showNegativeFeedbackModal on ${show}`);
+  },
+
+  setNegativeFeedbackPage (source) {
+    if (!negativeFeedbackPages.includes(source)) {
+      throw new TypeError('Invalid value for negativeFeedbackPage');
+    }
+    nonFluxState.negativeFeedbackPage = source;
+    // to stop a message cascade, removed: messageService.sendMessage(`state updated negativeFeedbackPage for page ${source}`);
+  },
+
+  setShowChallengeThanksForJoining (show) {
+    nonFluxState.showChallengeThanksForJoining = show;
+    messageService.sendMessage('state updated showChallengeThanksForJoining');
+  },
+
+  setShowChooseOrOpposeIntroModal (show, ballotItemType = 'CANDIDATE') {
+    nonFluxState.showChooseOrOpposeIntroModal = show;
+    nonFluxState.showChooseOrOpposeIntroModalBallotItemType = ballotItemType;
+    messageService.sendMessage('state updated showChooseOrOpposeIntroModal');
+  },
+
+  setShowChooseOrOpposeSignInModal (show) {
+    nonFluxState.showChooseOrOpposeSignInModal = show;
+    messageService.sendMessage('state updated showChooseOrOpposeSignInModal');
+  },
+
+  setFunctionToCallAfterProfileComplete (fn) {
+    nonFluxState.functionToCallAfterProfileComplete = fn;
+  },
+
+  getFunctionToCallAfterProfileComplete () {
+    return nonFluxState.functionToCallAfterProfileComplete;
+  },
+
+  setShowCompleteYourProfileModal (show) {
+    nonFluxState.showCompleteYourProfileModal = show;
+    messageService.sendMessage('state updated showCompleteYourProfileModal');
+  },
+
+  setShowCompleteYourProfileModalDict (modalDictionary) {
+    // Expected:
+    // modalDictionary = {
+    //   becomeMember,
+    //   campaignXWeVoteId,
+    //   clickSource,
+    //   isOppose,
+    //   isStopOpposing,
+    //   isStopSupporting,
+    //   isSupport,
+    //   politicianWeVoteId,
+    //   showModal,
+    //   startCampaign,
+    //   supportCampaign,
+    //   supportPolitician,
+    // }
+    // console.log('AppObservableStore setShowCompleteYourProfileModalDict modalDictionary:', modalDictionary);
+    nonFluxState.showCompleteYourProfileModalDict = modalDictionary;
+    messageService.sendMessage('state updated showCompleteYourProfileModalDict');
+  },
+
+  setShowEditAddressButton (show) {
+    nonFluxState.showEditAddressButton = show;
+    messageService.sendMessage('state updated showEditAddressButton');
+  },
+
+  setShowElectionsWithOrganizationVoterGuidesModal (show) {
+    nonFluxState.showElectionsWithOrganizationVoterGuidesModal = show;
+    messageService.sendMessage('state updated showElectionsWithOrganizationVoterGuidesModal');
+  },
+
+  setShowFirstPositionIntroModal (show) {
+    nonFluxState.showFirstPositionIntroModal = show;
+    messageService.sendMessage('state updated showFirstPositionIntroModal');
+  },
+
+  setShowHowItWorksModal (show) {
+    // The chosenPaidAccount values are: free, professional, enterprise
+    nonFluxState.showHowItWorksModal = show;
+    messageService.sendMessage('state updated showHowItWorksModal');
+  },
+
+  setShowImageUploadModal (show) {
+    // console.log('Setting image upload modal to open!');
+    nonFluxState.showImageUploadModal = show;
+    messageService.sendMessage('state updated showImageUploadModal');
+  },
+
+  setShowMakePublicGateModal (show) {
+    nonFluxState.showMakePublicGateModal = show;
+    messageService.sendMessage('state updated showMakePublicGateModal');
+  },
+
+  setShowNewVoterGuideModal (show) {
+    nonFluxState.showNewVoterGuideModal = show;
+    messageService.sendMessage('state updated showNewVoterGuideModal');
+  },
+
+  setShowOrganizationModal (show) {
+    // console.log("Setting organizationModal to ", show);
+    nonFluxState.showOrganizationModal = show;
+    messageService.sendMessage('state updated showOrganizationModal');
+  },
+
+  setShowPaidAccountUpgradeModal (chosenPaidAccount) {
+    // The chosenPaidAccount values are: free, professional, enterprise
+    nonFluxState.showPaidAccountUpgradeModal = chosenPaidAccount;
+    messageService.sendMessage('state updated showPaidAccountUpgradeModal');
+  },
+
+  setShowPersonalizedScoreIntroModal (show) {
+    nonFluxState.showPersonalizedScoreIntroModal = show;
+    messageService.sendMessage('state updated showPersonalizedScoreIntroModal');
+  },
+
+  setShowBallotChoicesAndSettingsModal (show) {
+    nonFluxState.showBallotChoicesAndSettingsModal = show;
+    messageService.sendMessage('state updated showBallotChoicesAndSettingsModal');
+  },
+
+  setShowPositionDrawer (show) {
+    nonFluxState.showPositionDrawer = show;
+    messageService.sendMessage('state updated showPositionDrawer');
+  },
+
+  setShowSelectBallotModal (showSelectBallotModal, showSelectBallotModalEditAddress = false) {
+    nonFluxState.showSelectBallotModalEditAddress = showSelectBallotModalEditAddress;
+    nonFluxState.showSelectBallotModal = showSelectBallotModal;
+    // console.log('setShowSelectBallotModal showSelectBallotModalEditAddress:', showSelectBallotModalEditAddress);
+    messageService.sendMessage('state updated showSelectBallotModal, showSelectBallotModalEditAddress');
+  },
+
+  setShowSelectBallotModalOnly (showSelectBallotModal) {
+    nonFluxState.showSelectBallotModal = showSelectBallotModal;
+    messageService.sendMessage('state updated showSelectBallotModalOnly');
+  },
+
+  setShowShareModal (show) {
+    // The chosenPaidAccount values are: free, professional, enterprise
+    nonFluxState.showShareModal = show;
+    messageService.sendMessage('state updated showShareModal');
+  },
+
+  setShowSharedItemModal (sharedItemCode) {
+    nonFluxState.sharedItemCode = sharedItemCode;
+    nonFluxState.showSharedItemModal = Boolean(sharedItemCode);
+    messageService.sendMessage('state updated showSharedItemModal');
+  },
+
+  setShowSignInModal (show) {
+    nonFluxState.showSignInModal = show;
+    messageService.sendMessage('state updated showSignInModal');
+  },
+
+  setShowTwitterLandingPage (show) {
+    nonFluxState.showTwitterLandingPage = show;
+    messageService.sendMessage('state updated showTwitterLandingPage');
+  },
+
+  setShowValuesIntroModal (show) {
+    nonFluxState.showValuesIntroModal = show;
+    messageService.sendMessage('state updated showValuesIntroModal');
+  },
+
+  setShowVoterPlanModal (show) {
+    // The chosenPaidAccount values are: free, professional, enterprise
+    nonFluxState.showVoterPlanModal = show;
+    messageService.sendMessage('state updated showVoterPlanModal');
+  },
+
+  setSignInStateChanged (signin) {
+    nonFluxState.signInStateChanged = signin;
+    messageService.sendMessage('state updated signInStateChanged');
+  },
+
+  setSignInStartFullUrl () {
+    nonFluxState.storeSignInStartFullUrl = true;
+    messageService.sendMessage('state updated storeSignInStartFullUrl');
+  },
+
+  setStoreSignInStartFullUrl () {
+    nonFluxState.storeSignInStartFullUrl = true;
+    messageService.sendMessage('state updated storeSignInStartFullUrl');
+  },
+
+  setViewingOrganizationVoterGuide (isViewing) {
+    nonFluxState.viewingOrganizationVoterGuide = isViewing;
+    messageService.sendMessage('state updated viewingOrganizationVoterGuide');
+  },
+
+  setVoterGuideSettingsDashboardEditMode (getVoterGuideSettingsDashboardEditMode) {
+    nonFluxState.getVoterGuideSettingsDashboardEditMode = getVoterGuideSettingsDashboardEditMode;
+    messageService.sendMessage('state updated getVoterGuideSettingsDashboardEditMode');
+  },
+
+  setVoterBallotItemsRetrieveHasBeenCalled (voterBallotItemsRetrieveHasBeenCalled) {
+    nonFluxState.voterBallotItemsRetrieveHasBeenCalled = voterBallotItemsRetrieveHasBeenCalled;
+    messageService.sendMessage('state updated voterBallotItemsRetrieveHasBeenCalled');
+  },
+
+  setVoterFirstRetrieveInitiated (voterFirstRetrieveInitiated) {
+    nonFluxState.voterFirstRetrieveInitiated = voterFirstRetrieveInitiated;
+    messageService.sendMessage('state updated voterFirstRetrieveInitiated');
+  },
+
+  setWhatAndHowMuchToShare (step) {
+    // console.log('setWhatAndHowMuchToShare, step:', step);
+    nonFluxState.whatAndHowMuchToShare = step;
+    messageService.sendMessage('state updated whatAndHowMuchToShare');
+  },
+
+  showActivityTidbitDrawer () {
+    return nonFluxState.showActivityTidbitDrawer;
+  },
+
+  showAddBallotItemModal () {
+    return nonFluxState.showAddBallotItemModal;
+  },
+
+  showAdviserIntroModal () {
+    return nonFluxState.showAdviserIntroModal;
+  },
+
+  showAskFriendsModal () {
+    return nonFluxState.showAskFriendsModal;
+  },
+
+  // returns one of the page enumerations
+  showNegativeFeedbackModal () {
+    return nonFluxState.showNegativeFeedbackModal;
+  },
+
+  showBallotChoicesAndSettingsModal () {
+    return nonFluxState.showBallotChoicesAndSettingsModal;
+  },
+
+  showChallengeThanksForJoining () {
+    return nonFluxState.showChallengeThanksForJoining;
+  },
+
+  showChooseOrOpposeIntroModal () {
+    return nonFluxState.showChooseOrOpposeIntroModal;
+  },
+
+  showChooseOrOpposeSignInModal () {
+    return nonFluxState.showChooseOrOpposeSignInModal;
+  },
+
+  showCompleteYourProfileModalDict () {
+    return nonFluxState.showCompleteYourProfileModalDict;
+  },
+
+  // showEditAddressButton () {
+  //   return nonFluxState.showEditAddressButton;
+  // },
+
+  showElectionsWithOrganizationVoterGuidesModal () {
+    return nonFluxState.showElectionsWithOrganizationVoterGuidesModal;
+  },
+
+  showFirstPositionIntroModal () {
+    return nonFluxState.showFirstPositionIntroModal;
+  },
+
+  showHowItWorksModal () {
+    return nonFluxState.showHowItWorksModal;
+  },
+
+  showingOneCompleteYourProfileModal () {
+    return nonFluxState.showAdviserIntroModal ||
+      nonFluxState.showFirstPositionIntroModal ||
+      nonFluxState.showHowItWorksModal ||
+      nonFluxState.showPersonalizedScoreIntroModal ||
+      nonFluxState.showBallotChoicesAndSettingsModal ||
+      nonFluxState.showSelectBallotModal ||
+      nonFluxState.showSharedItemModal ||
+      nonFluxState.showValuesIntroModal;
+  },
+
+  showMakePublicGateModal () {
+    return nonFluxState.showMakePublicGateModal;
+  },
+
+  showNewVoterGuideModal () {
+    return nonFluxState.showNewVoterGuideModal;
+  },
+
+  showPaidAccountUpgradeModal () {
+    // The chosenPaidAccount values are: free, professional, enterprise
+    return nonFluxState.showPaidAccountUpgradeModal;
+  },
+
+  showPersonalizedScoreIntroModal () {
+    return nonFluxState.showPersonalizedScoreIntroModal;
+  },
+
+  showPositionDrawer () {
+    return nonFluxState.showPositionDrawer;
+  },
+
+  showShareModal () {
+    return nonFluxState.showShareModal;
+  },
+
+  showSharedItemModal () {
+    return nonFluxState.showSharedItemModal;
+  },
+
+  showSelectBallotModal () {
+    return nonFluxState.showSelectBallotModal;
+  },
+
+  showSelectBallotModalEditAddress () {
+    return nonFluxState.showSelectBallotModalEditAddress;
+  },
+
+  showSignInModal () {
+    return nonFluxState.showSignInModal;
+  },
+
+  showOrganizationModal () {
+    return nonFluxState.showOrganizationModal;
+  },
+
+  showValuesIntroModal () {
+    return nonFluxState.showValuesIntroModal;
+  },
+
+  showImageUploadModal () {
+    return nonFluxState.showImageUploadModal;
+  },
+
+  showVoterPlanModal () {
+    return nonFluxState.showVoterPlanModal;
+  },
+
+  siteConfigurationHasBeenRetrieved () {
+    // let { hostname } = window.location;
+    // hostname = hostname || '';
+    // if (hostname === 'campaigns.wevote.us') {
+    //   // Bypass for default site
+    //   return true;
+    // } else {
+    //   return nonFluxState.siteConfigurationHasBeenRetrieved;
+    // }
+    return nonFluxState.siteConfigurationHasBeenRetrieved;
+  },
+
+  siteConfigurationRetrieve (hostname, externalVoterId = '', refreshString = '') {
+    $ajax({
+      endpoint: 'siteConfigurationRetrieve',
+      data: { hostname, refresh_string: refreshString },
+      success: (res) => {
+        // console.log('AppObservableStore siteConfigurationRetrieve success, res:', res);
+        const {
+          status: apiStatus,
+          success: apiSuccess,
+          hostname: hostFromApi,
+          organization_we_vote_id: siteOwnerOrganizationWeVoteId,
+          chosen_about_organization_external_url: chosenAboutOrganizationExternalUrl,
+          chosen_domain_type_is_campaign: chosenDomainTypeIsCampaign,
+          chosen_google_analytics_tracking_id: chosenGoogleAnalyticsTrackingID,
+          chosen_hide_we_vote_logo: hideWeVoteLogo,
+          chosen_logo_url_https: chosenSiteLogoUrl,
+          chosen_prevent_sharing_opinions: chosenPreventSharingOpinions,
+          chosen_ready_introduction_text: chosenReadyIntroductionText,
+          chosen_ready_introduction_title: chosenReadyIntroductionTitle,
+          chosen_website_name: chosenWebsiteName,
+        } = res;
+        let newHostname = hostFromApi ? hostFromApi.replace('www.', '') : hostname.replace('www.', '');
+        if (apiSuccess) {
+          let onWeVoteRootUrl = false;
+          let onWeVotePartnerSubdomainUrl = false;
+          let onFacebookSupportedDomainUrl = false;
+          let onChosenFullDomainUrl = false;
+
+          if (isCordovaLocal()) {
+            newHostname = webAppConfig.WE_VOTE_HOSTNAME;
+          }
+
+          onWeVoteRootUrl = this.isOnWeVoteRootUrl();
+          // console.log('AppObservableStore siteConfigurationRetrieve hostname, newHostname:', hostname, newHostname, ', onWeVoteRootUrl:', onWeVoteRootUrl);
+          if (!onWeVoteRootUrl && stringContains('wevote.us', newHostname)) {
+            onWeVotePartnerSubdomainUrl = true;
+          } else if (!onWeVoteRootUrl) {
+            onChosenFullDomainUrl = true;
+          }
+          onFacebookSupportedDomainUrl = this.isOnFacebookJsSdkHostDomainList();
+          // console.log('AppObservableStore siteConfigurationRetrieve onFacebookSupportedDomainUrl:', onFacebookSupportedDomainUrl);
+          // console.log('AppObservableStore externalVoterId:', externalVoterId, ', siteOwnerOrganizationWeVoteId:', siteOwnerOrganizationWeVoteId);
+          const { voterExternalIdHasBeenSavedOnce } = nonFluxState;
+          if (externalVoterId && siteOwnerOrganizationWeVoteId) {
+            if (!this.voterExternalIdHasBeenSavedOnce(externalVoterId, siteOwnerOrganizationWeVoteId)) {
+              // console.log('voterExternalIdHasBeenSavedOnce has NOT been saved before.');
+              VoterActions.voterExternalIdSave(externalVoterId, siteOwnerOrganizationWeVoteId);
+              if (!voterExternalIdHasBeenSavedOnce[externalVoterId]) {
+                voterExternalIdHasBeenSavedOnce[externalVoterId] = {};
+              }
+              voterExternalIdHasBeenSavedOnce[externalVoterId][siteOwnerOrganizationWeVoteId] = true;
+              // AnalyticsActions.saveActionBallotVisit(VoterStore.electionId());
+            } else {
+              // console.log('voterExternalIdHasBeenSavedOnce has been saved before.');
+            }
+          }
+          nonFluxState.apiStatus = apiStatus;
+          nonFluxState.apiSuccess = apiSuccess;
+          nonFluxState.chosenAboutOrganizationExternalUrl = chosenAboutOrganizationExternalUrl;
+          nonFluxState.chosenDomainTypeIsCampaign = chosenDomainTypeIsCampaign;
+          nonFluxState.chosen_google_analytics_tracking_id = chosenGoogleAnalyticsTrackingID;
+          nonFluxState.chosenPreventSharingOpinions = chosenPreventSharingOpinions;
+          nonFluxState.chosenReadyIntroductionText = chosenReadyIntroductionText;
+          nonFluxState.chosenReadyIntroductionTitle = chosenReadyIntroductionTitle;
+          nonFluxState.chosenSiteLogoUrl = chosenSiteLogoUrl;
+          nonFluxState.chosenWebsiteName = chosenWebsiteName;
+          nonFluxState.hideWeVoteLogo = hideWeVoteLogo;
+          nonFluxState.hostname = newHostname;
+          nonFluxState.onChosenFullDomainUrl = onChosenFullDomainUrl;
+          nonFluxState.onFacebookSupportedDomainUrl = onFacebookSupportedDomainUrl;
+          nonFluxState.onWeVotePartnerSubdomainUrl = onWeVotePartnerSubdomainUrl;
+          nonFluxState.onWeVoteRootUrl = onWeVoteRootUrl;
+          nonFluxState.siteConfigurationHasBeenRetrieved = true;
+          nonFluxState.siteOwnerOrganizationWeVoteId = siteOwnerOrganizationWeVoteId;
+          nonFluxState.voterExternalIdHasBeenSavedOnce = voterExternalIdHasBeenSavedOnce;
+          messageService.sendMessage('state updated for siteConfigurationRetrieve');
+        }
+      },
+
+      error: (res) => {
+        console.error('AppObservableStore error: ', res);
+        dumpObjProps('AppObservableStore error', res);
+      },
+    });
+  },
+
+  storeSignInStartFullUrl () {
+    return nonFluxState.storeSignInStartFullUrl;
+  },
+
+  unsetStoreSignInStartFullUrl () {
+    nonFluxState.unsetStoreSignInStartFullUrl = false;
+    messageService.sendMessage('state updated unsetStoreSignInStartFullUrl');
+  },
+
+  voterBallotItemsRetrieveHasBeenCalled () {
+    return nonFluxState.voterBallotItemsRetrieveHasBeenCalled;
+  },
+
+  voterCanStartCampaignXForThisPrivateLabelSite () {
+    const canEditCampaignXOwnedByOrganizationList = VoterStore.getCanEditCampaignXOwnedByOrganizationList();
+    return canEditCampaignXOwnedByOrganizationList.includes(nonFluxState.siteOwnerOrganizationWeVoteId);
+  },
+
+  voterExternalIdHasBeenSavedOnce (externalVoterId, membershipOrganizationWeVoteId) {
+    if (nonFluxState.voterExternalIdHasBeenSavedOnce[externalVoterId]) {
+      return nonFluxState.voterExternalIdHasBeenSavedOnce[externalVoterId][membershipOrganizationWeVoteId] || false;
+    } else {
+      return false;
+    }
+  },
+
+  voterFirstRetrieveInitiated () {
+    return nonFluxState.voterFirstRetrieveInitiated;
+  },
+
+  voterIsAdminForThisUrl () {
+    const linkedOrganizationWeVoteId = VoterStore.getLinkedOrganizationWeVoteId();
+    return nonFluxState.siteOwnerOrganizationWeVoteId === linkedOrganizationWeVoteId;
+  },
+};

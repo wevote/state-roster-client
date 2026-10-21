@@ -1,0 +1,417 @@
+import { LockOutlined } from '@mui/icons-material';
+import { CircularProgress, TextField } from '@mui/material';
+import { styled as muiStyled } from '@mui/styles';
+import withStyles from '@mui/styles/withStyles';
+import withTheme from '@mui/styles/withTheme';
+import { CardElement } from '@stripe/react-stripe-js';
+import PropTypes from 'prop-types';
+import React from 'react';
+import styled from 'styled-components';
+import VoterStore from '../../../stores/VoterStore';
+import DonateActions from '../../actions/DonateActions';
+import DonateStore from '../../stores/DonateStore';
+import { renderLog } from '../../utils/logging';
+import moneyStringToPennies from '../../utils/moneyStringToPennies';
+import SplitIconButton from '../Widgets/SplitIconButton';
+import { validateEmail } from '../../../utils/regex-checks';
+
+const iconButtonStyles = {
+  width: window.innerWidth < 1280 ? 250 : 300,
+  margin: '16px',
+};
+
+/*
+July 2021 TODO: Same named file in the WebApp and Campaigns -- PLEASE KEEP THEM IDENTICAL -- make symmetrical changes and test on both sides
+*/
+
+
+class CheckoutForm extends React.Component {
+  constructor (props) {
+    super(props);
+    this.state = {
+      donationWithStripeSubmitted: false,
+      oneLastRefreshSent: false,
+      stripePaymentError: false,
+      stripeErrorMessageForVoter: '',
+      emailFieldError: false,
+      emailFieldText: '',
+      emailValidationErrorText: '',
+    };
+    this.continuePolling = this.continuePolling.bind(this);
+    this.emailChange = this.emailChange.bind(this);
+    this.onDonateStoreChange = this.onDonateStoreChange.bind(this);
+    this.onVoterStoreChange = this.onVoterStoreChange.bind(this);
+    this.pollForWebhookCompletionAtList = this.pollForWebhookCompletionAtList.bind(this);
+    this.submitStripePayment = this.submitStripePayment.bind(this);
+    this.preDonationCounts = {
+      subscriptions: -1,
+      payments: -1,
+    };
+  }
+
+  componentDidMount () {
+    this.donateStoreListener = DonateStore.addListener(this.onDonateStoreChange.bind(this));
+    this.voterStoreListener = VoterStore.addListener(this.onVoterStoreChange.bind(this));
+    DonateStore.noDispatchClearStripeErrorState();
+    DonateActions.donationRefreshDonationList();
+  }
+
+  componentWillUnmount () {
+    this.donateStoreListener.remove();
+    this.voterStoreListener.remove();
+    if (this.stripeErrorTimer) clearTimeout(this.stripeErrorTimer);
+    if (this.setPollInterval) clearInterval(this.setPollInterval);
+    if (this.emailErrorTimer) clearInterval(this.emailErrorTimer);
+  }
+
+  onDonateStoreChange = () => {
+    const { donationWithStripeSubmitted, stripePaymentErrorMessage, oneLastRefreshSent, isPolling } = this.state;
+    console.log('onDonateStoreChange');
+    try {
+      const paymentSetupSuccess = stripePaymentErrorMessage === undefined || stripePaymentErrorMessage.length === 0;
+      const donationWithStripeApiSuccess = DonateStore.donationSuccess() === undefined ? true : DonateStore.donationSuccess();
+      const donationWithStripeErrorMessage = DonateStore.donationError();
+      const getAmountPaidViaStripe = DonateStore.getAmountPaidViaStripe();
+      let stripeErrorMessageForVoter = '';
+      if (!paymentSetupSuccess) {
+        stripeErrorMessageForVoter = stripePaymentErrorMessage;
+      } else if (!donationWithStripeApiSuccess && !isPolling) {
+        stripeErrorMessageForVoter = donationWithStripeErrorMessage ||
+          'An error occurred.  (Do you already have a membership for the same amount?)';
+      }
+
+      if (stripeErrorMessageForVoter) {
+        this.setState({
+          stripePaymentError: true,
+          stripeErrorMessageForVoter,
+        });
+        if (donationWithStripeSubmitted) {
+          this.stripeErrorTimer = setTimeout(() => {
+            this.setState({
+              stripePaymentError: false,
+              stripeErrorMessageForVoter: '',
+              donationWithStripeSubmitted: false,
+            });
+            DonateActions.clearStripeErrorState();
+          }, 10000);
+        }
+      }
+      console.log('getAmountPaidViaStripe:', getAmountPaidViaStripe);
+      if (getAmountPaidViaStripe) {
+        // Tell the parent component to move past this step
+        this.setState({
+          donationWithStripeSubmitted: false,
+        });
+      }
+
+      if (DonateStore.donationResponseReceived() && !oneLastRefreshSent) {
+        console.log('onDonateStoreChange  ---  donationResponseReceived');
+        if (DonateStore.donationSuccess()) {
+          console.log('onDonateStoreChange  ---  donationSuccess');
+          // One last refresh to guarantee that the DonationLists update
+          DonateActions.donationRefreshDonationList();
+          this.setState({
+            oneLastRefreshSent: true,
+          });
+        }
+      }
+    } catch (err) {
+      console.log('onDonateStoreChange caught error: ', err);
+    }
+  };
+
+  onVoterStoreChange () {
+    this.forceUpdate();
+  }
+
+  // See https://www.npmjs.com/package/@stripe/react-stripe-js#using-class-components
+  setPreDonationCounts () {
+    this.preDonationCounts = {
+      subscriptions: DonateStore.getNumberOfActiveSubscriptions(),
+      payments: DonateStore.getNumberOfPayments(),
+    };
+  }
+
+  submitStripePayment = async (emailForStripe) => {
+    const { stripe, value, elements, isMonthly, isChipIn, campaignXWeVoteId } = this.props;
+    const { emailFieldError } = this.state;
+    console.log('submitStripePayment was called ==================');
+
+    if (emailFieldError) {
+      this.setState({
+        emailValidationErrorText: 'Our payment processor requires an email address for this transaction.',
+        emailFieldError: false,
+      });
+    } else {
+      const email = emailForStripe;
+
+      let paymentMethodId;
+      let createPaymentError;
+      try {
+        ({ createPaymentError,  paymentMethod: { id: paymentMethodId } } = await stripe.createPaymentMethod({
+          type: 'card',
+          card: elements.getElement(CardElement),
+          billing_details: {
+            email,
+          },
+        }));
+      } catch (error2) {
+        console.log('Stripe createPaymentMethodError: ', error2);
+      }
+
+      const tokenResult = await stripe.createToken(elements.getElement(CardElement));
+      const { token } = tokenResult;
+      console.log(`stripe token object from component/dialog: ${token}`);
+      if (token) {
+        const isMonthlyDonation = isMonthly;
+        const isPremiumPlan = false;
+        const couponCode = '';
+        const premiumPlanType = '';
+        const donationPennies = moneyStringToPennies(value);
+
+        this.setPreDonationCounts();
+        DonateActions.clearStripeErrorState();
+        DonateActions.donationWithStripe(
+          token.id,
+          email,
+          donationPennies,
+          isChipIn,
+          isMonthlyDonation,
+          isPremiumPlan,
+          token.client_ip,
+          campaignXWeVoteId,
+          paymentMethodId,
+          couponCode,
+          premiumPlanType,
+        );
+
+        this.pollForWebhookCompletionAtList(20);
+
+        this.setState({
+          donationWithStripeSubmitted: true,
+          oneLastRefreshSent: false,
+          stripePaymentError: false,
+          stripePaymentErrorMessage: '',
+        });
+      } else {
+        const { /* code, */ message } = createPaymentError;
+        console.log('Stripe returned error message:', message);
+        this.setState({
+          stripePaymentError: true,
+          stripePaymentErrorMessage: message,
+        });
+      }
+    }
+  };
+
+  pollForWebhookCompletionAtList = (maxPolls) => {
+    let pollCount = maxPolls;
+    console.log('pollForWebhookCompletion entry ----- ');
+
+    if (this.continuePolling()) {
+      this.setState({ isPolling: true });
+      this.setPollInterval = setInterval(() => {
+        pollCount--;
+        if (pollCount > 0 && this.continuePolling() && DonateStore.donationSuccess()) {
+          console.log(`pollForWebhookCompletion polling ----- ${pollCount}`);
+          DonateActions.donationRefreshDonationList();
+        } else {
+          console.log(`pollForWebhookCompletion done ----- ${pollCount}`);
+          clearInterval(this.setPollInterval);
+          this.setPollInterval = null;
+          this.clearPreDonationCounts();
+          // So the previous card error, does not influence the next potential success
+          DonateActions.clearStripeErrorState();
+          // One last refresh to guarantee that the DonationLists update
+          DonateActions.donationRefreshDonationList();
+        }
+      }, 1000);
+      console.log(`pollForWebhookCompletion isPolling set false ===== ${pollCount}`);
+      this.setState({ isPolling: false });
+    }
+  };
+
+  emailChange = (event) => {
+    const currentEmail = event.target.value;
+    const currentEmailIsValid = validateEmail(currentEmail);
+    if (this.emailErrorTimer) clearInterval(this.emailErrorTimer);
+    if (currentEmail && !currentEmailIsValid) {
+      this.emailErrorTimer = setTimeout(() => {
+        this.setState({
+          emailFieldError: true,
+          emailFieldText: currentEmail,
+          emailValidationErrorText: 'Our payment processor requires a valid email address',
+        });
+        this.emailErrorTimer = null;
+      }, 1500);
+    } else {
+      this.setState({
+        emailFieldError: false,
+        emailFieldText: currentEmail,
+        emailValidationErrorText: '',
+      });
+    }
+  };
+
+  clearPreDonationCounts () {
+    this.preDonationCounts = {
+      subscriptions: -1,
+      payments: -1,
+    };
+  }
+
+  continuePolling () {
+    console.log(` continuePolling subs ${DonateStore.getNumberOfActiveSubscriptions()} vs ${this.preDonationCounts.subscriptions}  payments ${DonateStore.getNumberOfPayments()} vs ${this.preDonationCounts.payments}`);
+
+    return this.preDonationCounts.payments > -1 &&
+      DonateStore.getNumberOfActiveSubscriptions() === this.preDonationCounts.subscriptions &&
+      DonateStore.getNumberOfPayments() === this.preDonationCounts.payments;
+  }
+
+
+  render () {
+    renderLog('CheckoutForm');  // Set LOG_RENDER_EVENTS to log all renders
+    const { campaignXWeVoteId, classes, isMonthly } = this.props;
+    const { donationWithStripeSubmitted, emailValidationErrorText, emailFieldError, emailFieldText,
+      stripePaymentError, stripeErrorMessageForVoter } = this.state;
+    const voter = VoterStore.getVoter();
+    const haveEmailFromVoter = (voter.email && voter.email.length > 0) || false;
+    const emailForStripe = haveEmailFromVoter ? voter.email : emailFieldText;
+    // console.log('render haveEmailFromVoter:', haveEmailFromVoter, ',  emailFieldText:', emailFieldText);
+    const paymentErrorText = stripeErrorMessageForVoter  || 'Please verify your information.';
+    const error = emailFieldError || stripePaymentError;
+    const errorText = emailFieldError ? emailValidationErrorText : paymentErrorText;
+    let buttonText = campaignXWeVoteId && campaignXWeVoteId.length ? 'Become a member' : 'Donate monthly';
+    if (!isMonthly) {
+      buttonText = campaignXWeVoteId && campaignXWeVoteId.length ? 'Chip in now' : 'Donate now';
+    }
+
+    return (
+      <>
+        {error ? (
+          <div className={classes.stripeAlertError}>{errorText}</div>
+        ) : (
+          <div style={{ height: 41 }} />
+        )}
+        {!haveEmailFromVoter ? (
+          <TextFieldContainer>
+            <TextField
+              id="outlined-basic-email"
+              label="Email"
+              variant="outlined"
+              className={classes.root}
+              error={emailFieldError}
+              onChange={this.emailChange}
+              // autoFocus // If this is on it causes Jira bug WV-2
+            />
+          </TextFieldContainer>
+        ) : null}
+        <form>
+          <CardElement
+            options={{
+              style: {
+                base: {
+                  margin: 4,
+                  fontSize: '18px',
+                  color: 'darkgrey',
+                  '::placeholder': {
+                    color: 'lightgrey',
+                  },
+                },
+                empty: {
+                  backgroundColor: 'white',
+                  margin: 10,
+                },
+                invalid: {
+                  color: '#9e2146',
+                  fontSize: '18px',
+                },
+              },
+            }}
+          />
+          <ButtonContainer>
+            <SplitIconButton
+              buttonText={buttonText}
+              backgroundColor="#0834CD"
+              separatorColor="#0834CD"
+              styles={iconButtonStyles}
+              adjustedIconWidth={40}
+              disabled={donationWithStripeSubmitted}
+              externalUniqueId="becomeAMember"
+              icon={donationWithStripeSubmitted ? <ProgressStyled /> : <LockStyled />}
+              id="stripeCheckOutForm"
+              onClick={() => this.submitStripePayment(emailForStripe)}
+            />
+          </ButtonContainer>
+          <StripeTagLine>
+            Secure processing provided by Stripe
+          </StripeTagLine>
+        </form>
+      </>
+    );
+  }
+}
+CheckoutForm.propTypes = {
+  stripe: PropTypes.object,
+  elements: PropTypes.object,
+  value: PropTypes.string,
+  classes: PropTypes.object,
+  isMonthly: PropTypes.bool,
+  isChipIn: PropTypes.bool,
+  campaignXWeVoteId: PropTypes.string,
+};
+
+const StripeTagLine = styled('div')`
+  color: grey;
+  font-size: 12px;
+  padding-top: 5px;
+`;
+
+const TextFieldContainer = styled('div')`
+  color: grey;
+  font-size: 12px;
+  padding: 5px 0 10px 0;
+`;
+
+const ButtonContainer = styled('div')`
+  margin-top: 10px;
+`;
+
+const styles = () => ({
+  root: {
+    '& .MuiOutlinedInput-input': {
+      backgroundColor: 'white',
+    },
+    width: 250,
+  },
+  stripeAlertError: {
+    background: 'rgb(255, 177, 160)',
+    color: 'rgb(163, 40, 38)',
+    boxShadow: 'none',
+    pointerEvents: 'none',
+    fontWeight: 'bold',
+    marginBottom: 8,
+    fontSize: 14,
+    width: '94%',
+    padding: '8px 16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '4px',
+    '@media (max-width: 569px)': {
+      fontSize: 14,
+    },
+  },
+});
+
+const LockStyled = muiStyled(LockOutlined)({ color: 'white' });
+const ProgressStyled = muiStyled(CircularProgress)({
+  color: 'white',
+  width: '20px !important',
+  display: 'inline-block',
+  height: '20px !important',
+  alignItems: 'center',
+  padding: 'unset !important',
+});
+
+export default withTheme(withStyles(styles)(CheckoutForm));

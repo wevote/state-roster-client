@@ -1,0 +1,903 @@
+import { ArrowBack, ArrowBackIos } from '@mui/icons-material';
+import { Button, Dialog, OutlinedInput } from '@mui/material';
+import withStyles from '@mui/styles/withStyles';
+import withTheme from '@mui/styles/withTheme';
+import TagManager from 'react-gtm-module';
+import clsx from 'clsx';
+import PropTypes from 'prop-types';
+import React, { Component } from 'react';
+import styled from 'styled-components';
+import VoterActions from '../../../actions/VoterActions';
+import { hasCordovaNotch, isIOS, isIPhone4in } from '../../utils/cordovaUtils';
+import { isCordova, isWebApp } from '../../utils/isCordovaOrWebApp';
+import { renderLog } from '../../utils/logging';
+import VoterStore from '../../../stores/VoterStore';
+import { getPageDetails } from '../../../utils/lookupPageNameAndPageTypeDict';
+
+/* global $ */
+
+class SettingsVerifySecretCode extends Component {
+  constructor (props) {
+    super(props);
+    this.state = {
+      cancelingVerifyModal: false,
+      condensed: false,
+      dataLayerFired: false,
+      digit1: '',
+      digit2: '',
+      digit3: '',
+      digit4: '',
+      digit5: '',
+      digit6: '',
+      errorToDisplay: false,
+      errorMessageToDisplay: '',
+      incorrectSecretCodeEntered: false,
+      numberOfTriesRemaining: 5,
+      secretCodeVerified: false,
+      voterMustRequestNewCode: false,
+      voterPhoneNumber: '',
+      voterSecretCodeRequestsLocked: false,
+      voterVerifySecretCodeSubmitted: false,
+    };
+    this.onDigit1Change = this.onDigit1Change.bind(this);
+    this.onDigit2Change = this.onDigit2Change.bind(this);
+    this.onDigit3Change = this.onDigit3Change.bind(this);
+    this.onDigit4Change = this.onDigit4Change.bind(this);
+    this.onDigit5Change = this.onDigit5Change.bind(this);
+    this.onDigit6Change = this.onDigit6Change.bind(this);
+    this.handleKeyDown2 = this.handleKeyDown2.bind(this);
+    this.handleKeyDown3 = this.handleKeyDown3.bind(this);
+    this.handleKeyDown4 = this.handleKeyDown4.bind(this);
+    this.handleKeyDown5 = this.handleKeyDown5.bind(this);
+    this.handleKeyDown6 = this.handleKeyDown6.bind(this);
+    this.handleFocus = this.handleFocus.bind(this);
+    this.handleBlur = this.handleBlur.bind(this);
+    this.onPaste = this.onPaste.bind(this);
+  }
+
+  componentDidMount () {
+    // console.log('SettingsVerifySecretCode componentDidMount');
+    this.voterStoreListener = VoterStore.addListener(this.onVoterStoreChange.bind(this));
+    const { voterEmailAddress, voterPhoneNumber } = this.props;
+    // const newVoterPhoneNumber = voterPhoneNumber.replace(/\D+/g, '').replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+    // console.log('voterEmailAddress:', voterEmailAddress);
+
+    let initialDisplay = '';
+    if (isCordova()) {
+      const dlg = $('div[class*="SignInModal-dialogPaper"]');
+      initialDisplay = dlg.css('display');
+      dlg.css('display', 'none');  // Hide the entry dialog
+    }
+
+    this.setState({
+      voterEmailAddress,
+      voterPhoneNumber,
+      initialDisplay,
+    });
+    const delayBeforeClearingVerificationStatus = 200;
+    this.clearSecretCodeVerificationStatusTimer = setTimeout(() => {
+      VoterActions.clearSecretCodeVerificationStatus();
+    }, delayBeforeClearingVerificationStatus);
+
+    window.addEventListener('paste', this.onPaste);
+
+    const { dataLayerFired } = this.state;
+    if (!dataLayerFired) {
+      if (VoterStore.voterFirstRetrieveCompleted()) {
+        this.pushDataLayer(true, null, 'landing');
+        this.setState({
+          dataLayerFired: true,
+        });
+      }
+    }
+  }
+
+  shouldComponentUpdate (nextProps, nextState) {
+    if (this.state.incorrectSecretCodeEntered !== nextState.incorrectSecretCodeEntered) return true;
+    if (this.state.numberOfTriesRemaining !== nextState.numberOfTriesRemaining) return true;
+    if (this.state.secretCodeVerified !== nextState.secretCodeVerified) return true;
+    if (this.state?.voterEmailAddress !== nextState?.voterEmailAddress) return true;
+    if (this.state.voterMustRequestNewCode !== nextState.voterMustRequestNewCode) return true;
+    if (this.state.voterPhoneNumber !== nextState.voterPhoneNumber) return true;
+    if (this.state.voterSecretCodeRequestsLocked !== nextState.voterSecretCodeRequestsLocked) return true;
+    if (this.state.voterVerifySecretCodeSubmitted !== nextState.voterVerifySecretCodeSubmitted) return true;
+    if (this.state.cancelingVerifyModal !== nextState.cancelingVerifyModal) return true;
+    if (this.state.condensed !== nextState.condensed) return true;
+    if (this.state.digit1 !== nextState.digit1) return true;
+    if (this.state.digit2 !== nextState.digit2) return true;
+    if (this.state.digit3 !== nextState.digit3) return true;
+    if (this.state.digit4 !== nextState.digit4) return true;
+    if (this.state.digit5 !== nextState.digit5) return true;
+    if (this.state.digit6 !== nextState.digit6) return true;
+    // console.log('shouldComponentUpdate return false');
+    return false;
+  }
+
+  componentDidUpdate () {
+    const { dataLayerFired } = this.state;
+    if (!dataLayerFired) {
+      if (VoterStore.voterFirstRetrieveCompleted()) {
+        this.pushDataLayer(true, null, 'landing');
+        this.setState({
+          dataLayerFired: true,
+        });
+      }
+    }
+  }
+
+  componentWillUnmount () {
+    // console.log('SettingsVerifySecretCode componentWillUnmount');
+    this.voterStoreListener.remove();
+    if (this.clearSecretCodeVerificationStatusTimer) {
+      clearTimeout(this.clearSecretCodeVerificationStatusTimer);
+    }
+    window.removeEventListener('paste', this.onPaste);
+    this.closeVerifyModalLocal();
+    const { initialDisplay = 'unset' } = this.state;
+    if (isCordova()) {
+      $('div[class*="SignInModal-dialogPaper"]').css('display', initialDisplay);  // un-hide the entry dialog
+    }
+  }
+
+  handleKeyDown2 (e) {
+    if (e.keyCode === 8 && this.state.digit2 === '') {
+      e.target.parentElement.previousElementSibling.firstElementChild.value = '';
+      e.target.parentElement.previousElementSibling.firstElementChild.focus();
+      this.setState({ digit1: '' });
+    }
+  }
+
+  handleKeyDown3 (e) {
+    if (e.keyCode === 8 && this.state.digit3 === '') {
+      e.target.parentElement.previousElementSibling.firstElementChild.value = '';
+      e.target.parentElement.previousElementSibling.firstElementChild.focus();
+      this.setState({ digit2: '' });
+    }
+  }
+
+  handleKeyDown4 (e) {
+    if (e.keyCode === 8 && this.state.digit4 === '') {
+      e.target.parentElement.previousElementSibling.firstElementChild.value = '';
+      e.target.parentElement.previousElementSibling.firstElementChild.focus();
+      this.setState({ digit3: '' });
+    }
+  }
+
+  handleKeyDown5 (e) {
+    if (e.keyCode === 8 && this.state.digit5 === '') {
+      e.target.parentElement.previousElementSibling.firstElementChild.value = '';
+      e.target.parentElement.previousElementSibling.firstElementChild.focus();
+      this.setState({ digit4: '' });
+    }
+  }
+
+  handleKeyDown6 (e) {
+    const ENTER_KEY_CODE = 13;
+    const BACKSPACE_KEY_CODE = 8;
+    if (e.keyCode === BACKSPACE_KEY_CODE && this.state.digit6 === '') {
+      e.target.parentElement.previousElementSibling.firstElementChild.value = '';
+      e.target.parentElement.previousElementSibling.firstElementChild.focus();
+      this.setState({ digit5: '' });
+    }
+    const keyCodesForSubmit = [ENTER_KEY_CODE];
+    if (keyCodesForSubmit.includes(e.keyCode)) {
+      e.preventDefault();
+      this.voterVerifySecretCode(e);
+    }
+  }
+
+  handleBlur () {
+    this.setState({ condensed: false });
+  }
+
+  handleFocus (e) {
+    e.target.select();
+    if (isCordova()) {
+      this.setState({ condensed: true });
+    }
+  }
+
+  onVoterStoreChange () {
+    const secretCodeVerificationStatus = VoterStore.getSecretCodeVerificationStatus();
+    const { incorrectSecretCodeEntered, numberOfTriesRemaining, secretCodeVerified, voterMustRequestNewCode, voterSecretCodeRequestsLocked } = secretCodeVerificationStatus;
+    // console.log(`onVoterStoreChange secretCodeVerified: ${secretCodeVerified}`);
+    // console.log(`onVoterStoreChange secretCodeVerificationStatus: ${JSON.stringify(secretCodeVerificationStatus)}`);
+    if (secretCodeVerified) {
+      // console.log('SettingsVerifySecretCode -- onVoterStoreChange secretCodeVerified: yes');
+      this.closeSignInModalLocal();
+    } else {
+      let errorMessageToDisplay = '';
+      let errorToDisplay = false;
+      if (voterSecretCodeRequestsLocked) {
+        // console.log('onVoterStoreChange SecretCodeRequestsLocked');
+        errorToDisplay = true;
+        const { voterEmailAddress, voterPhoneNumber } = this.state;
+        if (voterEmailAddress) {
+          errorMessageToDisplay = `Please contact WeVote support regarding ${voterEmailAddress}.`;
+        } else if (voterPhoneNumber) {
+          errorMessageToDisplay = `Please contact WeVote support regarding ${voterPhoneNumber}.`;
+        } else {
+          errorMessageToDisplay = 'Please contact WeVote support. Your account is locked.';
+        }
+      } else if (voterMustRequestNewCode) {
+        // console.log('onVoterStoreChange You\'ve reached the maximum number of tries.');
+        errorToDisplay = true;
+        errorMessageToDisplay = 'You\'ve reached the maximum number of tries.';
+      } else if (incorrectSecretCodeEntered || numberOfTriesRemaining <= 4) {
+        // console.log('onVoterStoreChange DISPLAYING Incorrect code entered.');
+        errorToDisplay = true;
+        errorMessageToDisplay = 'Incorrect code entered.';
+      }
+      // console.log('onVoterStoreChange setState() incorrectSecretCodeEntered:', incorrectSecretCodeEntered);
+      this.setState({
+        errorMessageToDisplay,
+        errorToDisplay,
+        incorrectSecretCodeEntered,
+        numberOfTriesRemaining,
+        secretCodeVerified,
+        voterMustRequestNewCode,
+        voterSecretCodeRequestsLocked,
+        voterVerifySecretCodeSubmitted: false,
+      });
+    }
+  }
+
+  onDigit1Change (e) {
+    const regex = /^[0-9]$/;
+    const regex2 = /^[0-9]{7}$/;
+    const digit = e.target.value;
+
+    // Handle iOS verification code "From Messages" auto fill
+    if (isCordova() && digit.length === 6) {
+      this.onPaste(e);
+      return;
+    }
+
+    if (regex2.test(digit)) { // change is fired on paste, resulting in multiple digits
+      return;
+    }
+
+    if (regex.test(digit)) {
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.focus();
+      this.setState({
+        digit1: digit,
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+      e.target.value = digit;
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.nextElementSibling.focus();
+    } else {
+      e.target.value = '';
+      this.setState({
+        digit1: '',
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+    }
+  }
+
+
+  onDigit2Change (e) {
+    const regex = /^[0-9]$/;
+    const regex2 = /^[0-9]{7}$/;
+    const digit = e.target.value;
+
+    if (regex2.test(digit)) { // change is fired on paste, resulting in multiple digits
+      return;
+    }
+
+    if (regex.test(digit)) {
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.focus();
+      this.setState({
+        digit2: digit,
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+      e.target.value = digit;
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.nextElementSibling.focus();
+    } else {
+      e.target.value = '';
+      this.setState({
+        digit2: '',
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+    }
+  }
+
+  onDigit3Change (e) {
+    const regex = /^[0-9]$/;
+    const regex2 = /^[0-9]{7}$/;
+    const digit = e.target.value;
+
+    if (regex2.test(digit)) { // change is fired on paste, resulting in multiple digits
+      return;
+    }
+
+    if (regex.test(digit)) {
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.focus();
+      this.setState({
+        digit3: digit,
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+      e.target.value = digit;
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.nextElementSibling.focus();
+    } else {
+      e.target.value = '';
+      this.setState({
+        digit3: '',
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+    }
+  }
+
+  onDigit4Change (e) {
+    const regex = /^[0-9]$/;
+    const regex2 = /^[0-9]{7}$/;
+    const digit = e.target.value;
+
+    if (regex2.test(digit)) { // change is fired on paste, resulting in multiple digits
+      return;
+    }
+
+    if (regex.test(digit)) {
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.focus();
+      this.setState({
+        digit4: digit,
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+      e.target.value = digit;
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.nextElementSibling.focus();
+    } else {
+      e.target.value = '';
+      this.setState({
+        digit4: '',
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+    }
+  }
+
+  onDigit5Change (e) {
+    const regex = /^[0-9]$/;
+    const regex2 = /^[0-9]{7}$/;
+    const digit = e.target.value;
+
+    if (regex2.test(digit)) { // change is fired on paste, resulting in multiple digits
+      return;
+    }
+
+    if (regex.test(digit)) {
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.focus();
+      this.setState({
+        digit5: digit,
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+      e.target.value = digit;
+      e.target.blur();
+      e.target.parentElement.nextElementSibling.firstElementChild.nextElementSibling.focus();
+    } else {
+      e.target.value = '';
+      this.setState({
+        digit5: '',
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+    }
+  }
+
+  onDigit6Change (e) {
+    const regex = /^[0-9]$/;
+    const regex2 = /^[0-9]{7}$/;
+    const digit = e.target.value;
+
+    if (regex2.test(digit)) { // change is fired on paste, resulting in multiple digits
+      return;
+    }
+
+    if (regex.test(digit)) {
+      this.setState({
+        digit6: digit,
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+      e.target.value = digit;
+    } else {
+      e.target.value = '';
+      this.setState({
+        digit6: '',
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+    }
+  }
+
+  // eslint-disable-next-line react/sort-comp
+  onPaste (e) {
+    let secretCode = '';
+    if (isIOS() && e.target.value) {   // "From Messages" in iOS (once upon a time)
+      // console.log('onPaste clipboard data ios data: ', e.target.value);
+      secretCode = e.target.value;
+    } else if (e.clipboardData) {  // Paste
+      // console.log('onPaste clipboard data NOT ios data: ', e.clipboardData.getData('Text'));
+      secretCode = e.clipboardData.getData('Text')
+    }
+    const charInputArray = secretCode.split('');
+    // console.log('onPaste charInputArray: ', charInputArray);
+
+    const regex = /^[0-9]$/;
+    const allDigits = charInputArray.filter((digit) => regex.test(digit));
+
+    // Pasted in from messages, or from clipboard in desktop/mobile
+    // if all 6 digits are numeric and there are 6 of them
+    if (allDigits && secretCode.length === 6) {
+      // console.log('onPaste allDigits data', allDigits);
+      this.setState({
+        digit1: allDigits[0],
+        digit2: allDigits[1],
+        digit3: allDigits[2],
+        digit4: allDigits[3],
+        digit5: allDigits[4],
+        digit6: allDigits[5],
+        errorToDisplay: false,
+        errorMessageToDisplay: '',
+      });
+      const { voterPhoneNumber } = this.props;
+      const codeSentToSMSPhoneNumber = !!voterPhoneNumber;
+
+      // If all digits were pasted in, do not require a 'Verify' button keystroke
+      // console.log('onPaste all digits were pasted in, do not require a \'Verify\' button keystroke');
+      VoterActions.voterVerifySecretCode(secretCode, codeSentToSMSPhoneNumber);
+      this.setState({ voterVerifySecretCodeSubmitted: true });
+    } else {
+      document.getElementById('digit1').blur(); // prevents change from firing on chrome
+      document.getElementById('digit2').blur(); // prevents change from firing on chrome
+      document.getElementById('digit3').blur(); // prevents change from firing on chrome
+      document.getElementById('digit4').blur(); // prevents change from firing on chrome
+      document.getElementById('digit5').blur(); // prevents change from firing on chrome
+      document.getElementById('digit6').blur(); // prevents change from firing on chrome
+      this.setState({
+        digit1: '',
+        digit2: '',
+        digit3: '',
+        digit4: '',
+        digit5: '',
+        digit6: '',
+        errorToDisplay: true,
+        errorMessageToDisplay: 'Please enter a six-digit code',
+      });
+    }
+  }
+
+  voterVerifySecretCode = () => {
+    const { digit1, digit2, digit3, digit4, digit5, digit6, voterPhoneNumber, voterVerifySecretCodeSubmitted } = this.state;
+    // console.log('voterVerifySecretCode local function, voterPhoneNumber:', voterPhoneNumber);
+    const secretCode = `${digit1}${digit2}${digit3}${digit4}${digit5}${digit6}`;
+    // console.log('voterVerifySecretCode local function, secretCode:', secretCode);
+    const codeSentToSMSPhoneNumber = !!voterPhoneNumber;
+    if (!voterVerifySecretCodeSubmitted) {
+      VoterActions.voterVerifySecretCode(secretCode, codeSentToSMSPhoneNumber);
+      this.setState({ voterVerifySecretCodeSubmitted: true });
+    }
+  };
+
+  closeSignInModalLocal = () => {
+    // console.log('voterVerifySecretCode this.props.closeVerifyModal:', this.props.closeVerifyModal);
+    if (this.props.closeSignInModal) {
+      this.props.closeSignInModal();
+    } else if (this.props.closeVerifyModal) {
+      // WV-4229: Some entry points (WelcomeForVoters, CompleteYourProfile, SetUpAccountEditName)
+      // only pass closeVerifyModal, not closeSignInModal. Without this fallback, a successful
+      // code verification leaves the modal stuck on "Verifying...".
+      this.props.closeVerifyModal();
+    }
+  };
+
+  closeVerifyModalLocal = () => {
+    // console.log('voterVerifySecretCode this.props.closeVerifyModal:', this.props.closeVerifyModal);
+    this.setState({ cancelingVerifyModal: true });
+    if (this.props.closeVerifyModal) {
+      this.props.closeVerifyModal();
+    }
+  };
+
+  pushDataLayer = (landing, buttonId, actionType) => {
+    const dataLayerObject = {
+      actionDetails: {
+        actionType,
+        ...(buttonId && { buttonId }),
+      },
+      event: landing ? 'landing' : 'click',
+      verifyDetails: {
+        verifyMethod: this.voterPhoneNumber ? 'SMS' : 'email',
+      },
+      pageDetails: getPageDetails(),
+      userDetails: VoterStore.getAnalyticsUserDetails(),
+    };
+    TagManager.dataLayer({ dataLayer: dataLayerObject });
+  };
+
+  render () {
+    renderLog('SettingsVerifySecretCode');  // Set LOG_RENDER_EVENTS to log all renders
+    // console.log('SettingsVerifySecretCode render');
+    const { classes } = this.props;
+    const {
+      condensed, errorMessageToDisplay, errorToDisplay,
+      voterEmailAddress, voterMustRequestNewCode, voterPhoneNumber, voterSecretCodeRequestsLocked,
+      voterVerifySecretCodeSubmitted,
+    } = this.state;
+
+    if (!voterEmailAddress && !voterPhoneNumber) {
+      // We get a weird extra ghost version of SettingsVerifySecretCode, and this is how we block it.
+      return null;
+    }
+
+    let sentTo = voterPhoneNumber || voterEmailAddress;
+    // Parambatur.Narayanasami@wevoteeducation.org  6/25/25: Long names were making the dialog horizont123ally scrollable
+    if (voterEmailAddress && voterEmailAddress.length > 25) {
+      const pieces = voterEmailAddress.split('@');
+      sentTo = `${pieces[0]}@\n${pieces[1]}`;
+    }
+
+    return (
+      <Dialog
+        id="codeVerificationDialog"
+        open={this.props.show}
+        onClose={this.closeVerifyModalLocal}
+        className="u-z-index-9030"
+        // Leaving classes.dialogRoot in place with a zIndex value of 9030
+        // until 2023 to prevent problems with main.css caching,
+        // since this is such a critical modal
+        classes={{
+          paper: clsx(classes.dialogPaper, {
+            [classes.codeVerifyCordova]: isCordova(),
+          }),
+          root: classes.dialogRoot,
+        }}
+      >
+        <ModalTitleArea condensed={condensed}>
+          {isWebApp() && (
+            <Button
+              id={voterPhoneNumber ? 'phoneVerificationBackButton' : 'emailVerificationBackButton'}
+              onClick={(e) => {
+                const buttonId = e.target.id;
+                this.closeVerifyModalLocal();
+                this.pushDataLayer(false, buttonId, 'navigate');
+              }}
+            >
+              {isIOS() ? <ArrowBackIos /> : <ArrowBack />}
+              {' '}
+              Back
+            </Button>
+          )}
+        </ModalTitleArea>
+        <ModalContent condensed={condensed} style={{ padding: `${isWebApp() ? 'undefined' : '37px 0 2px 0'}` }}>
+          <TextContainer>
+            <Title condensed={condensed}>Code Verification</Title>
+            <Subtitle>A 6-digit code has been sent to</Subtitle>
+            <PhoneSubtitle>{sentTo}</PhoneSubtitle>
+
+            {(voterEmailAddress) ? (
+              <Subtitle>If you haven&apos;t received the code in 30 seconds, please check your spam folder and mark the email as &apos;Not Spam&apos;.</Subtitle>
+            ) : (
+              <>
+                {(voterPhoneNumber) && (
+                  <Subtitle>If you haven&apos;t received the code within 30 seconds, please verify the number you entered.</Subtitle>
+                )}
+              </>
+            )}
+            <InputContainer condensed={condensed}>
+              <OutlinedInput
+                classes={{ root: classes.inputBase, input: classes.input }}
+                disabled={(this.state.numberOfTriesRemaining === 0) || voterVerifySecretCodeSubmitted}
+                error={errorToDisplay}
+                id="digit1"
+                label={false}
+                maxLength={1}
+                notched={false}
+                onBlur={this.handleBlur}
+                onFocus={this.handleFocus}
+                onChange={this.onDigit1Change}
+                onPaste={() => this.onPaste}
+                type="tel"
+                value={this.state.digit1}
+                autoFocus
+              />
+              <OutlinedInput
+                classes={{ root: classes.inputBase, input: classes.input }}
+                disabled={(this.state.numberOfTriesRemaining === 0) || voterVerifySecretCodeSubmitted}
+                error={errorToDisplay}
+                id="digit2"
+                label={false}
+                maxLength={1}
+                onBlur={this.handleBlur}
+                onFocus={this.handleFocus}
+                onChange={this.onDigit2Change}
+                onPaste={() => this.onPaste}
+                onKeyDown={this.handleKeyDown2}
+                type="tel"
+                value={this.state.digit2}
+              />
+              <OutlinedInput
+                classes={{ root: classes.inputBase, input: classes.input }}
+                disabled={(this.state.numberOfTriesRemaining === 0) || voterVerifySecretCodeSubmitted}
+                error={errorToDisplay}
+                id="digit3"
+                label={false}
+                maxLength={1}
+                onBlur={this.handleBlur}
+                onFocus={this.handleFocus}
+                onChange={this.onDigit3Change}
+                onPaste={() => this.onPaste}
+                onKeyDown={this.handleKeyDown3}
+                type="tel"
+                value={this.state.digit3}
+              />
+              <OutlinedInput
+                classes={{ root: classes.inputBase, input: classes.input }}
+                disabled={(this.state.numberOfTriesRemaining === 0) || voterVerifySecretCodeSubmitted}
+                error={errorToDisplay}
+                id="digit4"
+                label={false}
+                maxLength={1}
+                onBlur={this.handleBlur}
+                onFocus={this.handleFocus}
+                onChange={this.onDigit4Change}
+                onPaste={() => this.onPaste}
+                onKeyDown={this.handleKeyDown4}
+                type="tel"
+                value={this.state.digit4}
+              />
+              <OutlinedInput
+                classes={{ root: classes.inputBase, input: classes.input }}
+                disabled={(this.state.numberOfTriesRemaining === 0) || voterVerifySecretCodeSubmitted}
+                error={errorToDisplay}
+                id="digit5"
+                label={false}
+                maxLength={1}
+                onBlur={this.handleBlur}
+                onFocus={this.handleFocus}
+                onChange={this.onDigit5Change}
+                onPaste={() => this.onPaste}
+                onKeyDown={this.handleKeyDown5}
+                type="tel"
+                value={this.state.digit5}
+              />
+              <OutlinedInput
+                classes={{ root: classes.inputBase, input: classes.input }}
+                disabled={(this.state.numberOfTriesRemaining === 0) || voterVerifySecretCodeSubmitted}
+                error={errorToDisplay}
+                id="digit6"
+                label={false}
+                maxLength={1}
+                onChange={this.onDigit6Change}
+                onFocus={this.handleFocus}
+                // This is a fix for WV-328. Changes handleDigit6Blur to handleBlur.
+                onBlur={this.handleBlur}
+                onPaste={() => this.onPaste}
+                onKeyDown={this.handleKeyDown6}
+                type="tel"
+                value={this.state.digit6}
+              />
+            </InputContainer>
+            {errorToDisplay && (
+              <ErrorMessage>{errorMessageToDisplay}</ErrorMessage>
+            )}
+          </TextContainer>
+          <ButtonsContainer condensed={condensed}>
+            <Button
+              classes={{ root: classes.verifyButton }}
+              id={voterPhoneNumber ? 'phoneVerifyButton' : 'emailVerifyButton'}
+              color="primary"
+              disabled={this.state.digit1 === '' || this.state.digit2 === '' || this.state.digit3 === '' || this.state.digit4 === '' || this.state.digit5 === '' || this.state.digit6 === '' || voterMustRequestNewCode || voterSecretCodeRequestsLocked || voterVerifySecretCodeSubmitted}
+              fullWidth
+              onClick={(e) => {
+                const buttonId = e.target.id;
+                this.voterVerifySecretCode();
+                this.pushDataLayer(false, buttonId, 'navigate');
+              }}
+              variant="contained"
+            >
+              {voterVerifySecretCodeSubmitted ? 'Verifying...' : 'Verify'}
+            </Button>
+            {/* We will make this button work later
+            <Button
+              classes={{ root: classes.button }}
+              color="primary"
+              variant={voterMustRequestNewCode ? 'contained' : ''}
+            >
+              Resend SMS
+            </Button>
+            */}
+            <Button
+              id={voterPhoneNumber ? 'tryADifferentNumber' : 'tryADifferentEmail'}
+              classes={{ root: classes.button }}
+              color="primary"
+              disabled={voterVerifySecretCodeSubmitted}
+              onClick={(e) => {
+                const buttonId = e.target.id;
+                this.closeVerifyModalLocal();
+                this.pushDataLayer(false, buttonId, 'navigate');
+              }}
+              variant={voterMustRequestNewCode ? 'contained' : 'outlined'}
+            >
+              {voterPhoneNumber ? 'Try a different number' : 'Try a different email'}
+            </Button>
+          </ButtonsContainer>
+        </ModalContent>
+      </Dialog>
+    );
+  }
+}
+SettingsVerifySecretCode.propTypes = {
+  classes: PropTypes.object,
+  show: PropTypes.bool,
+  closeSignInModal: PropTypes.func,
+  closeVerifyModal: PropTypes.func,
+  voterEmailAddress: PropTypes.string,
+  voterPhoneNumber: PropTypes.string,
+};
+
+const styles = (theme) => ({
+  dialogPaper: {
+    marginTop: hasCordovaNotch() ? 68 : 48,
+    [theme.breakpoints.up('sm')]: {
+      maxWidth: '720px',
+      width: '85%',
+      minHeight: '90%',
+      maxHeight: '90%',
+      height: '90%',
+      margin: '0 auto',
+    },
+    [theme.breakpoints.down('sm')]: {
+      minWidth: '95%',
+      maxWidth: '95%',
+      width: '95%',
+      minHeight: '90%',
+      maxHeight: '90%',
+      height: '90%',
+      margin: '0 auto',
+    },
+  },
+  dialogRoot: {
+    zIndex: '9030 !important',
+  },
+  codeVerifyCordova: {
+    // top: '9%', Removed 12/13/23 to reduce vertical vibration on digit entry field advance
+    bottom: 'unset',
+    height: 'unset',
+    minHeight: 'unset',
+    margin: '5px',
+  },
+  inputBase: {
+    alignContent: 'center',
+    display: 'flex',
+    // flex: '0 0 1',
+    justifyContent: 'center',
+    margin: '0 4px',
+    // maintain aspect ratio
+    width: '10vw',
+    height: '10vw',
+    maxWidth: 53,
+    maxHeight: 53,
+    fontSize: 22,
+    '@media(min-width: 569px)': {
+      margin: '0 8px',
+      fontSize: 35,
+    },
+    '&:first-child': {
+      marginLeft: 0,
+    },
+    '&:last-child': {
+      marginRight: 0,
+    },
+    background: '#f7f7f7',
+  },
+  input: {
+    textAlign: 'center',
+    padding: '8px 0',
+
+  },
+  button: {
+    width: '100%',
+    border: '1px solid #ddd',
+    fontWeight: 'bold',
+    margin: '6px 0',
+  },
+  verifyButton: {
+    margin: '6px 0',
+  },
+});
+
+const ModalTitleArea = styled('div', {
+  shouldForwardProp: (prop) => !['condensed'].includes(prop),
+})(({ condensed }) => (`
+  width: 100%;
+  padding: ${condensed ? '8px' : '12px'};
+  box-shadow: 0 20px 40px -25px #999;
+  z-index: 999;
+  display: flex;
+  justify-content: flex-start;
+  position: absolute;
+  top: 0;
+`));
+
+const ModalContent = styled('div', {
+  shouldForwardProp: (prop) => !['condensed'].includes(prop),
+})(({ condensed }) => (`
+  display: flex;
+  flex-direction: column;
+  align-items: ${condensed ? 'flex-start' : 'space-evenly'};
+  height: ${isWebApp() ?  '100%' : 'unset'};
+  width: 80%;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: ${condensed ? '66px 0 0 0' : '86px 0 72px 0'};
+`));
+
+const TextContainer = styled('div')`
+`;
+
+const ButtonsContainer = styled('div', {
+  shouldForwardProp: (prop) => !['condensed'].includes(prop),
+})(({ condensed }) => (`
+  margin-top: ${condensed ? '16px' : 'auto'};
+`));
+
+const Title = styled('h3', {
+  shouldForwardProp: (prop) => !['condensed'].includes(prop),
+})(({ condensed }) => (`
+  font-weight: bold;
+  font-size: ${() => (isIPhone4in() ? '26px' : '30px')};
+  padding: 0 10px;
+  margin-bottom: ${condensed ? '16px' : '36px'};
+  color: black;
+  text-align: center;
+  @media(min-width: 569px) {
+    font-size: 36px;
+  }
+`));
+
+const Subtitle = styled('h4')`
+  color: #424242;
+  text-align: center;
+`;
+
+const PhoneSubtitle = styled('h4')`
+  color: black;
+  font-weight: bold;
+  text-align: center;
+`;
+
+const InputContainer = styled('div', {
+  shouldForwardProp: (prop) => !['condensed'].includes(prop),
+})(({ condensed }) => (`
+  display: flex;
+  justify-content: space-between;
+  margin: auto;
+  width: 100%;
+  margin-top: ${condensed ? '16px' : '32px'};
+`));
+
+const ErrorMessage = styled('div')`
+  color: red;
+  margin: 12px 0;
+  text-align: center;
+  font-size: 14px;
+`;
+
+export default withTheme(withStyles(styles)(SettingsVerifySecretCode));
+
