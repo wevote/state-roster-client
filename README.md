@@ -14,7 +14,7 @@ dotnet run --project src/StateBallot.Api      # http://localhost:5080, migrates 
 # in another terminal
 cd ../state-roster-client
 npm ci                                        # installs exactly what package-lock.json pins
-npm run dev                                   # http://localhost:5173, reloads as you edit
+npm start                                     # http://localhost:5173, reloads as you edit. npm run dev does the same.
 ```
 
 Use `npm ci`, not `npm install`. `npm install` can rewrite `package-lock.json` when your npm version differs from the one that wrote it.
@@ -25,11 +25,16 @@ If a page says "The API answered 503" or "Is it running?", the API is not runnin
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Dev server on port 5173 with hot reload |
+| `npm start` (or `npm run dev`) | Dev server on port 5173 with hot reload |
+| `npm run lint` | ESLint with the same airbnb-based rules as WebApp and weconnect-client (`.eslintrc`) |
 | `npm run build` | Type-checks with `tsc`, then builds to `dist/`. A type error fails the build. |
 | `npm run preview` | Serves the built `dist/` on port 5173. The Docker image runs this. |
 
-There are no tests or lint script for the front end yet. Run `npm run build` before pushing, because it is the only check.
+There are no tests yet. Run `npm run lint` and `npm run build` before pushing.
+
+## Config
+
+`src/js/config.js` holds the logging switches that `src/js/common/utils/logging.js` reads, for example `LOG_RENDER_EVENTS` to print every `renderLog` call. Git ignores it. `npm start`, `npm run dev` and `npm run build` create it from `config-template.js` when it is missing (`node/initialSteps.js`), so change your copy, not the template.
 
 ## Talking to the API
 
@@ -41,21 +46,37 @@ The browser code only calls relative `/api/...` paths (`src/api.ts`). Vite forwa
 | `docker compose up web` | `http://api:5080`, set in the pipeline's `docker-compose.yml` |
 | An API somewhere else | `API_URL=http://host:5080 npm run dev` |
 
-There are no `.env` files or `VITE_*` variables.
+There are no `.env` files or `VITE_*` variables, and the API URL is not in `config.js`.
 
 Pages poll the API, so runs started from the CLI or another browser show up without a reload.
 
 ## Layout
 
+The folders follow WeVote's [WebApp](../WebApp) and [weconnect-client](../weconnect-client), so the shared `common` folder works here unchanged.
+
 | Path | What it is |
 | --- | --- |
-| `src/main.tsx` | Entry point: React Query client, router, theme |
-| `src/App.tsx` | Top bar and routes |
-| `src/api.ts` | Response types, `useApi` (polling fetch hook), `startJob` |
-| `src/theme.ts` | Material UI theme |
-| `src/ui.tsx` | Shared components |
-| `src/StartRunDialog.tsx` | The "Start a run" dialog, which posts to `/api/jobs` |
-| `src/pages/` | One file per route |
+| `src/index.tsx` | Entry point: error boundary, theme, React Query client, router |
+| `src/App.tsx` | Routes, and the "Start a run" dialog |
+| `src/js/common/` | Copied from `WebApp/src/js/common`. Do not edit it here. See below. |
+| `src/js/components/` | Components, in a folder per area. `Widgets/` holds the small shared ones (`StatusText`, `PageHeader`, `Pending`...). |
+| `src/js/components/Style/consoleTheme.ts` | Material UI theme |
+| `src/js/contexts/StartRunContext.tsx` | Lets any page open the "Start a run" dialog |
+| `src/js/pages/` | One file per route |
+| `src/js/react-query/` | `RosterQuery.ts` (`useApi`, the polling fetch hook, and `startJob`) and `apiTypes.ts` (response types) |
+| `src/js/utils/` | Formatting and run helpers |
+| `src/js/config-template.js` | Template for `config.js` |
+| `node/initialSteps.js` | Creates `config.js` before dev and build |
+
+### The common folder
+
+`src/js/common` must stay identical to `WebApp/src/js/common` (see `ReadMeReCommonDirectory.txt` in it). Fix a bug there in WebApp, then copy the folder over:
+
+```bash
+rsync -a --delete --exclude .DS_Store ../WebApp/src/js/common/ src/js/common/
+```
+
+Only the files the console imports get built. Today those are `utils/logging.js` (`renderLog`, `httpLog`), `utils/numberWithCommas.js`, `components/Widgets/ErrorBoundary.jsx` and `components/Widgets/LoadingWheel.jsx`. Many other files there import WebApp files that do not exist here (stores, actions), or need `styled-components` and `@mui/styles`, which this repo does not install. `npm run lint` and `tsc` skip the folder, since WebApp lints it. Some common files use `require()`, which `vite-plugin-commonjs` handles.
 
 | Route | Page |
 | --- | --- |
