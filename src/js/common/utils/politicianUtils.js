@@ -1,0 +1,208 @@
+import PoliticianActions from '../actions/PoliticianActions';
+import PoliticianStore from '../stores/PoliticianStore';
+import apiCalming from './apiCalming';
+import initializejQuery from './initializejQuery';
+
+function orderCandidatesByUltimateDate (firstEntry, secondEntry) {
+  return secondEntry.candidate_ultimate_election_date - firstEntry.candidate_ultimate_election_date;
+}
+
+export function getPoliticianValuesFromIdentifiers (politicianSEOFriendlyPath, politicianWeVoteId) {
+  // console.log('getPoliticianValuesFromIdentifiers politicianSEOFriendlyPath: ', politicianSEOFriendlyPath, ', politicianWeVoteId: ', politicianWeVoteId);
+  let ballotpediaPoliticianUrl = '';
+  let candidateCampaignList = [];
+  let contestOfficeName = '';
+  let finalElectionDateInPast = false;
+  let instagramHandle = '';
+  // let isSupportersCountMinimumExceeded = false;
+  let linkedCampaignXWeVoteId = '';
+  let officeWeVoteId = '';
+  let opponentCandidateList = [];
+  let politicalParty = '';
+  let politician = {};
+  let politicianDataFound = false;
+  let politicianDescription = '';
+  let politicianImageUrlLarge = '';
+  let politicianImageUrlMedium = '';
+  let politicianImageUrlTiny = '';
+  let politicianName = '';
+  let politicianSEOFriendlyPathFromObject = '';
+  let politicianUrl = '';
+  let politicianWeVoteIdFromObject = '';
+  let profileImageBackgroundColor = '';
+  let stateCode = '';
+  let twitterFollowersCount = 0;
+  let twitterHandle = '';
+  let twitterHandle2 = '';
+  let voterIsPoliticianOwner = false;
+  let wikipediaUrl = '';
+  let youtubeUrl = '';
+  if (politicianSEOFriendlyPath) {
+    politician = PoliticianStore.getPoliticianBySEOFriendlyPath(politicianSEOFriendlyPath);
+    politicianDataFound = !!(politician && politician.politician_we_vote_id);
+  } else if (politicianWeVoteId) {
+    politician = PoliticianStore.getPoliticianByWeVoteId(politicianWeVoteId);
+    ({ seo_friendly_path: politicianSEOFriendlyPathFromObject } = politician);
+    politicianDataFound = !!(politician && politician.politician_we_vote_id);
+  }
+  if (politician.constructor === Object && politician.politician_we_vote_id) {
+    ({
+      ballotpedia_politician_url: ballotpediaPoliticianUrl,
+      candidate_list: candidateCampaignList,
+      contest_office_name: contestOfficeName,
+      contest_office_we_vote_id: officeWeVoteId,
+      final_election_date_in_past: finalElectionDateInPast,
+      instagram_handle: instagramHandle,
+      // is_supporters_count_minimum_exceeded: isSupportersCountMinimumExceeded,
+      linked_campaignx_we_vote_id: linkedCampaignXWeVoteId,
+      opponent_candidate_list: opponentCandidateList,
+      political_party: politicalParty,
+      politician_description: politicianDescription,
+      politician_name: politicianName,
+      political_party: politicalParty,
+      politician_twitter_handle: twitterHandle,
+      politician_twitter_handle2: twitterHandle2,
+      politician_url: politicianUrl,
+      politician_we_vote_id: politicianWeVoteIdFromObject,
+      profile_image_background_color: profileImageBackgroundColor,
+      state_code: stateCode,
+      twitter_followers_count: twitterFollowersCount,
+      voter_is_politician_owner: voterIsPoliticianOwner,
+      we_vote_hosted_profile_image_url_large: politicianImageUrlLarge,
+      we_vote_hosted_profile_image_url_medium: politicianImageUrlMedium,
+      we_vote_hosted_profile_image_url_tiny: politicianImageUrlTiny,
+      voter_is_politician_owner: voterIsPoliticianOwner,
+      wikipedia_url: wikipediaUrl,
+      youtube_url: youtubeUrl,
+    } = politician);
+  }
+  if ((candidateCampaignList && candidateCampaignList.length > 0) && (!politicianImageUrlLarge || politicianImageUrlLarge === '' || !politicianImageUrlMedium || politicianImageUrlMedium === '' || !politicianImageUrlTiny || politicianImageUrlTiny === '')) {
+    candidateCampaignList = candidateCampaignList.sort(orderCandidatesByUltimateDate);
+    for (let i = 0; i < candidateCampaignList.length; i++) {
+      if ((!politicianImageUrlLarge || politicianImageUrlLarge === '') && candidateCampaignList[i].candidate_photo_url_large) {
+        politicianImageUrlLarge = candidateCampaignList[i].candidate_photo_url_large;
+      }
+      if ((!politicianImageUrlMedium || politicianImageUrlMedium === '') && candidateCampaignList[i].candidate_photo_url_medium) {
+        politicianImageUrlMedium = candidateCampaignList[i].candidate_photo_url_medium;
+      }
+      if ((!politicianImageUrlTiny || politicianImageUrlTiny === '') && candidateCampaignList[i].candidate_photo_url_tiny) {
+        politicianImageUrlTiny = candidateCampaignList[i].candidate_photo_url_tiny;
+      }
+    }
+  }
+  return {
+    ballotpediaPoliticianUrl,
+    candidateCampaignList,
+    contestOfficeName,
+    finalElectionDateInPast,
+    instagramHandle,
+    // isSupportersCountMinimumExceeded,
+    linkedCampaignXWeVoteId,
+    officeWeVoteId,
+    opponentCandidateList,
+    politicianDataFound,
+    politicalParty,
+    politicianDescription,
+    politicianImageUrlLarge,
+    politicianImageUrlMedium,
+    politicianImageUrlTiny,
+    politicianSEOFriendlyPath: politicianSEOFriendlyPathFromObject,
+    politicianName,
+    politicianUrl,
+    politicianWeVoteId: politicianWeVoteIdFromObject,
+    profileImageBackgroundColor,
+    stateCode,
+    twitterFollowersCount,
+    twitterHandle,
+    twitterHandle2,
+    voterIsPoliticianOwner,
+    wikipediaUrl,
+    youtubeUrl,
+  };
+}
+
+export function politicianRetrieveFromIdentifiers (politicianSEOFriendlyPath, politicianWeVoteId) {
+  // console.log('politicianRetrieveFromIdentifiersIfNeeded politicianSEOFriendlyPath: ', politicianSEOFriendlyPath, ', politicianWeVoteId: ', politicianWeVoteId);
+  const asOwner = PoliticianStore.getVoterCanEditThisPolitician(politicianWeVoteId);
+  if (politicianSEOFriendlyPath) {
+    initializejQuery(() => {
+      if (asOwner) {
+        PoliticianActions.politicianRetrieveBySEOFriendlyPath(politicianSEOFriendlyPath, asOwner);
+      } else if (apiCalming(`politicianRetrieve-${politicianSEOFriendlyPath}`, 2000)) {
+        PoliticianActions.politicianRetrieveBySEOFriendlyPath(politicianSEOFriendlyPath, asOwner);
+      }
+    });
+    return true;
+  } else if (politicianWeVoteId) {
+    initializejQuery(() => {
+      if (asOwner) {
+        PoliticianActions.politicianRetrieve(politicianWeVoteId, asOwner);
+      } else if (apiCalming(`politicianRetrieve-${politicianWeVoteId}`, 2000)) {
+        PoliticianActions.politicianRetrieve(politicianWeVoteId);
+      }
+    });
+    return true;
+  } else {
+    return false;
+  }
+}
+
+export function politicianRetrieveFromIdentifiersIfNeeded (politicianSEOFriendlyPath, politicianWeVoteId) {
+  // console.log('politicianRetrieveFromIdentifiersIfNeeded politicianSEOFriendlyPath: ', politicianSEOFriendlyPath, ', politicianWeVoteId: ', politicianWeVoteId);
+  let politician = {};
+  let mustRetrieveCampaign = false;
+
+  // console.log('politicianRetrieveFromIdentifiersIfNeeded voter:', voter);
+  const asOwner = PoliticianStore.getVoterCanEditThisPolitician(politicianWeVoteId);
+  if (politicianSEOFriendlyPath) {
+    politician = PoliticianStore.getPoliticianBySEOFriendlyPath(politicianSEOFriendlyPath);
+    // console.log('politicianRetrieveFromIdentifiersIfNeeded politician:', politician);
+    if (politician.constructor === Object) {
+      if (!politician.politician_we_vote_id) {
+        mustRetrieveCampaign = true;
+      }
+    } else {
+      mustRetrieveCampaign = true;
+    }
+    // console.log('politicianRetrieveFromIdentifiersIfNeeded mustRetrieveCampaign:', mustRetrieveCampaign, ', politicianSEOFriendlyPath:', politicianSEOFriendlyPath);
+    if (mustRetrieveCampaign) {
+      initializejQuery(() => {
+        if (asOwner) {
+          PoliticianActions.politicianRetrieveBySEOFriendlyPath(politicianSEOFriendlyPath, asOwner);
+        } else if (apiCalming(`politicianRetrieve-${politicianSEOFriendlyPath}`, 2000)) {
+          PoliticianActions.politicianRetrieveBySEOFriendlyPath(politicianSEOFriendlyPath);
+        }
+      });
+    }
+  } else if (politicianWeVoteId) {
+    politician = PoliticianStore.getPoliticianByWeVoteId(politicianWeVoteId);
+    if (politician.constructor === Object) {
+      if (!politician.politician_we_vote_id) {
+        mustRetrieveCampaign = true;
+      }
+    } else {
+      mustRetrieveCampaign = true;
+    }
+    // console.log('politicianRetrieveFromIdentifiersIfNeeded mustRetrieveCampaign:', mustRetrieveCampaign, ', politicianWeVoteId:', politicianWeVoteId);
+    if (mustRetrieveCampaign) {
+      initializejQuery(() => {
+        if (asOwner) {
+          PoliticianActions.politicianRetrieve(politicianWeVoteId, asOwner);
+        } else if (apiCalming(`politicianRetrieve-${politicianWeVoteId}`, 2000)) {
+          PoliticianActions.politicianRetrieve(politicianWeVoteId);
+        }
+      });
+    }
+  }
+  return true;
+}
+
+export function politicianRetrieveFromIdentifiersIfNotAlreadyRetrieved (politicianSEOFriendlyPath, politicianWeVoteId) {
+  if (
+    (politicianSEOFriendlyPath && PoliticianStore.getPoliticianBySEOFriendlyPath() !== {}) &&
+    (politicianWeVoteId && PoliticianStore.getPoliticianByWeVoteId(politicianWeVoteId) !== {})
+  ) {
+    return false;
+  }
+  return politicianRetrieveFromIdentifiersIfNeeded(politicianSEOFriendlyPath, politicianWeVoteId);
+}

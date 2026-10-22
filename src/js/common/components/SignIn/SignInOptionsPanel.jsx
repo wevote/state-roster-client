@@ -1,0 +1,722 @@
+import { Facebook, X as Twitter } from '@mui/icons-material';
+import PropTypes from 'prop-types';
+import React, { Component } from 'react';
+import Button from 'react-bootstrap/Button';
+import TagManager from 'react-gtm-module';
+import styled from 'styled-components';
+import AnalyticsActions from '../../../actions/AnalyticsActions';
+import TwitterActions from '../../../actions/TwitterActions';
+import VoterActions from '../../../actions/VoterActions';
+import VoterSessionActions from '../../../actions/VoterSessionActions';
+import AppleSignIn from '../../../components/Apple/AppleSignIn';
+import FacebookSignIn from '../../../components/Facebook/FacebookSignIn';
+import VoterEmailAddressEntry from '../../../components/Settings/VoterEmailAddressEntry';
+import VoterPhoneVerificationEntry from '../../../components/Settings/VoterPhoneVerificationEntry';
+import TwitterSignIn from '../../../components/Twitter/TwitterSignIn';
+import BrowserPushMessage from '../../../components/Widgets/BrowserPushMessage';
+import ByContinuingNotice from '../../../components/Widgets/ByContinuingNotice.jsx';
+import webAppConfig from '../../../config';
+import FacebookStore from '../../../stores/FacebookStore';
+import VoterStore from '../../../stores/VoterStore';
+import initializeAppleSDK from '../../../utils/initializeAppleSDK';
+import initializeFacebookSDK from '../../../utils/initializeFacebookSDK';
+import lookupPageNameAndPageTypeDict, { getPageDetails } from '../../../utils/lookupPageNameAndPageTypeDict';
+import AppObservableStore, { messageService } from '../../stores/AppObservableStore';
+import { isIPhone4in, isIPhone4p7in, restoreStylesAfterCordovaKeyboard } from '../../utils/cordovaUtils';
+import { normalizedHref } from '../../utils/hrefUtils';
+import { isAndroid, isCordova, isWebApp } from '../../utils/isCordovaOrWebApp';
+import Cookies from '../../utils/js-cookie/Cookies';
+import { oAuthLog, renderLog } from '../../utils/logging';
+import stringContains from '../../utils/stringContains';
+import LoadingWheel from '../Widgets/LoadingWheel';
+import signInModalGlobalState from '../Widgets/signInModalGlobalState';
+import SnackNotifier, { openSnackbar } from '../Widgets/SnackNotifier';
+
+/* global $ */
+
+const debugMode = false;
+
+export default class SignInOptionsPanel extends Component {
+  constructor (props) {
+    super(props);
+    this.state = {
+      facebookAuthResponse: {},
+      hideAppleSignInButton: false,
+      hideCurrentlySignedInHeader: false,
+      hideDialogForCordova: false,
+      hideFacebookSignInButton: !webAppConfig.ENABLE_FACEBOOK,
+      hideTwitterSignInButton: !(webAppConfig.ENABLE_TWITTER && webAppConfig.ENABLE_TWITTER_AS_VOTER_SIGN_IN_OPTION),
+      hideVoterEmailAddressEntry: false,
+      hideVoterPhoneEntry: false,
+      isInternetExplorer: document.documentMode || false, // Yes, we are talking about that old Microsoft product
+      isOnWeVoteRootUrl: true,
+      isOnWeVotePartnerSubdomainUrl: false,
+      isOnFacebookSupportedDomainUrl: false,
+      pleaseSignInTitleFromState: <></>,
+      pleaseSignInSubTitle: <></>,
+      showTwitterDisconnect: false,
+      showRecommendedText: false,
+    };
+    this.toggleTwitterDisconnectClose = this.toggleTwitterDisconnectClose.bind(this);
+    this.toggleTwitterDisconnectOpen = this.toggleTwitterDisconnectOpen.bind(this);
+    this.voterSplitIntoTwoAccounts = this.voterSplitIntoTwoAccounts.bind(this);
+    this.hideDialogForCordovaLocal = this.hideDialogForCordovaLocal.bind(this);
+    this.closeSignInModalLocal = this.closeSignInModalLocal.bind(this);
+  }
+
+  // See https://reactjs.org/docs/error-boundaries.html
+  static getDerivedStateFromError (error) { // eslint-disable-line no-unused-vars
+    // Update state so the next render will show the fallback UI, We should have a "Oh snap" page
+    return { hasError: true };
+  }
+
+  // Set up this component upon first entry
+  // componentWillMount is used in WebApp
+  componentDidMount () {
+    // console.log("SignInOptionsPanel componentDidMount");
+    // initializeAppleSDK(null);
+    const { FB, AppleID } = window;
+    if (!FB) {
+      initializeFacebookSDK();
+    }
+    if (!AppleID) {
+      initializeAppleSDK();
+    }
+    this.onVoterStoreChange();
+    this.appStateSubscription = messageService.getMessage().subscribe(() => this.onAppObservableStoreChange());
+    this.facebookStoreListener = FacebookStore.addListener(this.onFacebookChange.bind(this));
+    this.voterStoreListener = VoterStore.addListener(this.onVoterStoreChange.bind(this));
+    let signInStartFullUrl =  Cookies.get('sign_in_start_full_url');
+    if (stringContains('/settings/account', signInStartFullUrl)) {
+      Cookies.remove('sign_in_start_full_url', { path: '/' });
+      Cookies.remove('sign_in_start_full_url', { path: '/', domain: 'wevote.us' });
+    }
+    let pathname = '';
+    const isOnFacebookSupportedDomainUrl = AppObservableStore.isOnFacebookJsSdkHostDomainList(); // hostname.replace('www.', '') === 'wevote.us' || hostname === 'quality.wevote.us' || hostname === 'localhost' || hostname === 'wevotedeveloper.com' || isCordova() || window.location.href.includes('ngrok');
+
+    const getStartedMode = AppObservableStore.getStartedMode();
+    AnalyticsActions.saveActionAccountPage(VoterStore.electionId());
+    const { origin } = window.location;
+
+    if (this.props.pleaseSignInTitle || this.props.pleaseSignInSubTitle || this.props.pleaseSignInTextOff) {
+      this.setState({
+        pleaseSignInTitleFromState: this.props.pleaseSignInTitle || <></>,
+        pleaseSignInSubTitle: this.props.pleaseSignInSubTitle || <></>,
+      }, () => this.localStoreSignInStartFullUrl());
+    } else if (getStartedMode && getStartedMode === 'startup') {
+      // js/pages/Startup
+      this.setState({
+        pleaseSignInTitleFromState: <></>,
+        pleaseSignInSubTitle: <></>,
+        showRecommendedText: false,
+      });
+      pathname = '/settings/profile';
+      signInStartFullUrl = `${origin}${pathname}`;
+      // console.log('SignInOptionsPanel getStartedForCampaigns, new origin: ', origin, ', pathname: ', pathname, ', signInStartFullUrl: ', signInStartFullUrl);
+      if (origin && stringContains('wevote.us', origin)) {
+        Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 31, path: '/', domain: 'wevote.us' });
+      }
+    } else if (getStartedMode && getStartedMode === 'getStartedForCampaigns') {
+      pathname = '/settings/profile';
+      signInStartFullUrl = `${origin}${pathname}`;
+      // console.log('SignInOptionsPanel getStartedForCampaigns, new origin: ', origin, ', pathname: ', pathname, ', signInStartFullUrl: ', signInStartFullUrl);
+      if (origin && stringContains('wevote.us', origin)) {
+        Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 31, path: '/', domain: 'wevote.us' });
+      } else {
+        Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 31, path: '/' });
+      }
+      this.setState({
+        pleaseSignInTitleFromState: <>Please sign in to get started.</>,
+        pleaseSignInSubTitle: <>Use Twitter to verify your account most quickly.</>,
+      });
+    } else if (getStartedMode && getStartedMode === 'getStartedForOrganizations') {
+      pathname = '/settings/profile';
+      signInStartFullUrl = `${origin}${pathname}`;
+      // console.log('SignInOptionsPanel getStartedForCampaigns, new origin: ', origin, ', pathname: ', pathname, ', signInStartFullUrl: ', signInStartFullUrl);
+      if (origin && stringContains('wevote.us', origin)) {
+        Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 1, path: '/', domain: 'wevote.us' });
+      } else {
+        Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 1, path: '/' });
+      }
+      this.setState({
+        pleaseSignInTitleFromState: <>Please sign in to get started.</>,
+        pleaseSignInSubTitle: <>Use Twitter to verify your account most quickly.</>,
+      });
+    } else if (getStartedMode && getStartedMode === 'getStartedForVoters') {
+      pathname = '/settings/profile';
+      signInStartFullUrl = `${origin}${pathname}`;
+      // console.log('SignInOptionsPanel getStartedForCampaigns, new origin: ', origin, ', pathname: ', pathname, ', signInStartFullUrl: ', signInStartFullUrl);
+      if (origin && stringContains('wevote.us', origin)) {
+        Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 1, path: '/', domain: 'wevote.us' });
+      } else {
+        Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 1, path: '/' });
+      }
+      this.setState({
+        pleaseSignInTitleFromState: <>Please sign in to get started.</>,
+        pleaseSignInSubTitle: <></>,
+      });
+    } else {
+      const isOnWeVoteRootUrl = AppObservableStore.isOnWeVoteRootUrl();
+      const isOnWeVotePartnerSubdomainUrl = AppObservableStore.isOnWeVotePartnerSubdomainUrl();
+      // No need to query an api to get this answer.  Creates an unneeded dependency:  const isOnFacebookSupportedDomainUrl = AppObservableStore.isOnFacebookSupportedDomainUrl() || window.location.href.includes('ngrok');
+      let pleaseSignInSubTitle = <></>;
+      if (isOnWeVoteRootUrl || isOnWeVotePartnerSubdomainUrl || isOnFacebookSupportedDomainUrl) {
+        pleaseSignInSubTitle = <></>;
+      }
+      this.setState({
+        pleaseSignInTitleFromState: <></>,
+        pleaseSignInSubTitle,
+      }, () => this.localStoreSignInStartFullUrl());
+    }
+    this.setState({
+      isOnWeVoteRootUrl: AppObservableStore.isOnWeVoteRootUrl(),
+      isOnWeVotePartnerSubdomainUrl: AppObservableStore.isOnWeVotePartnerSubdomainUrl(),
+      isOnFacebookSupportedDomainUrl,
+    });
+
+    const delayBeforeClearingEmailStatus = 500;
+    this.clearEmailTimer = setTimeout(() => {
+      VoterActions.clearSecretCodeVerificationStatusAndEmail();
+    }, delayBeforeClearingEmailStatus);
+    const delayBeforeClearingPhoneStatus = 750;
+    this.clearPhoneTimer = setTimeout(() => {
+      VoterActions.clearSecretCodeVerificationStatusAndPhone();
+    }, delayBeforeClearingPhoneStatus);
+  }
+
+  componentDidUpdate () {
+    if (AppObservableStore.isSnackMessagePending()) openSnackbar({});
+  }
+
+  componentDidCatch (error, info) {
+    // We should get this information to AWS CloudWatch!
+    console.error('SignInOptionsPanel caught error: ', `${error} with info: `, info);
+  }
+
+  componentWillUnmount () {
+    // console.log("SignInOptionsPanel componentWillUnmount");
+    signInModalGlobalState.set('textOrEmailSignInInProcess', false);
+    this.appStateSubscription.unsubscribe();
+    this.facebookStoreListener.remove();
+    this.voterStoreListener.remove();
+    if (this.timer) clearTimeout(this.timer);
+    if (this.clearEmailTimer) clearTimeout(this.clearEmailTimer);
+    if (this.clearPhoneTimer) clearTimeout(this.clearPhoneTimer);
+    if (this.scrollTimer) clearTimeout(this.scrollTimer);
+    restoreStylesAfterCordovaKeyboard('SignInOptionsPanel');
+  }
+
+  onAppObservableStoreChange () {
+    const { isOnFacebookSupportedDomainUrl } = this.state;
+    this.setState({
+      isOnWeVoteRootUrl: AppObservableStore.isOnWeVoteRootUrl(),
+      isOnWeVotePartnerSubdomainUrl: AppObservableStore.isOnWeVotePartnerSubdomainUrl(),
+      isOnFacebookSupportedDomainUrl: AppObservableStore.isOnFacebookSupportedDomainUrl() || isOnFacebookSupportedDomainUrl,
+    });
+  }
+
+  onVoterStoreChange () {
+    this.setState({
+      voter: VoterStore.getVoter(),
+    });
+  }
+
+  onFacebookChange () {
+    this.setState({
+      facebookAuthResponse: FacebookStore.getFacebookAuthResponse(),
+    });
+  }
+
+  closeSignInModalLocal = () => {
+    // console.log('SignInOptionsPanel closeSignInModalLocal');
+    if (this.props.closeSignInModal) {
+      this.props.closeSignInModal();
+    }
+  };
+
+  closeSignInModalLocalFromEmailOrPhone = () => {
+    // console.log('SignInOptionsPanel closeSignInModalLocalFromEmailOrPhone');
+    this.showAllSignInOptions();
+    if (this.props.closeSignInModal) {
+      this.props.closeSignInModal();
+    }
+  };
+
+  closeVerifyModalLocal = () => {
+    // console.log('SignInOptionsPanel closeVerifyModalLocal');
+    this.showAllSignInOptions();
+  };
+
+  showAllSignInOptions = () => {
+    // console.log('SignInOptionsPanel showAllSignInOptions');
+    const {
+      isInternetExplorer,
+    } = this.state;
+    this.setState({
+      hideAppleSignInButton: isInternetExplorer || isAndroid(),
+      hideFacebookSignInButton: !webAppConfig.ENABLE_FACEBOOK,  // December 12, 2023: All sorts of problems with sign-in with Facebook on Android
+      hideTwitterSignInButton: !(webAppConfig.ENABLE_TWITTER && webAppConfig.ENABLE_TWITTER_AS_VOTER_SIGN_IN_OPTION),    // Feb 2024 problems with twitter in all apps and cordova, but ok on api server
+      hideVoterEmailAddressEntry: false,
+      hideVoterPhoneEntry: false,
+    });
+    const delayBeforeScrolling = 250;
+    if (this.scrollTimer) clearTimeout(this.scrollTimer);
+    this.scrollTimer = setTimeout(() => {
+      window.scrollTo(0, 0);
+    }, delayBeforeScrolling);
+  };
+
+  showEmailOnlySignIn = () => {
+    // console.log('SignInOptionsPanel showEmailOnlySignIn');
+    this.setState({
+      hideAppleSignInButton: true,
+      hideCurrentlySignedInHeader: false,
+      hideVoterEmailAddressEntry: false,
+      hideFacebookSignInButton: true,
+      hideTwitterSignInButton: true,
+      hideVoterPhoneEntry: true,
+    });
+    if (this.props.focusedOnSingleInputToggle) {
+      this.props.focusedOnSingleInputToggle('email');
+    }
+    const delayBeforeScrolling = 250;
+    if (this.scrollTimer) clearTimeout(this.scrollTimer);
+    this.scrollTimer = setTimeout(() => {
+      window.scrollTo(0, 0);
+    }, delayBeforeScrolling);
+  };
+
+  showPhoneOnlySignIn = () => {
+    // console.log('SignInOptionsPanel showPhoneOnlySignIn');
+    this.setState({
+      hideAppleSignInButton: true,
+      hideCurrentlySignedInHeader: false,
+      hideFacebookSignInButton: true,
+      hideTwitterSignInButton: true,
+      hideVoterEmailAddressEntry: true,
+      hideVoterPhoneEntry: false,
+    });
+    const delayBeforeScrolling = 250;
+    if (this.scrollTimer) clearTimeout(this.scrollTimer);
+    this.scrollTimer = setTimeout(() => {
+      window.scrollTo(0, 0);
+    }, delayBeforeScrolling);
+  };
+
+  toggleTwitterDisconnectOpen () {
+    this.setState({ showTwitterDisconnect: true });
+  }
+
+  toggleTwitterDisconnectClose () {
+    this.setState({ showTwitterDisconnect: false });
+  }
+
+  voterSplitIntoTwoAccounts () {
+    VoterActions.voterSplitIntoTwoAccounts();
+    this.setState({ showTwitterDisconnect: false });
+  }
+
+  localStoreSignInStartFullUrl () {
+    const { origin } = window.location;
+    const pathname = normalizedHref();
+    // console.log('localStoreSignInStartFullUrl, pathname:', pathname);
+    const signInStartFullUrl = `${origin}${pathname}`;
+    // console.log('localStoreSignInStartFullUrl, signInStartFullUrl:', signInStartFullUrl);
+    // AppObservableStore.setSignInStartFullUrl();
+    if (origin && stringContains('wevote.us', origin)) {
+      Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 1, path: '/', domain: 'wevote.us' });
+    } else {
+      Cookies.set('sign_in_start_full_url', signInStartFullUrl, { expires: 1, path: '/' });
+    }
+  }
+
+  // facebookLogOutOnKeyDown (event) {
+  //   const enterAndSpaceKeyCodes = [13, 32];
+  //   if (enterAndSpaceKeyCodes.includes(event.keyCode)) {
+  //     FacebookActions.appLogout();
+  //   }
+  // }
+
+  hideDialogForCordovaLocal () {
+    if (!this.state.hideDialogForCordova) {
+      this.setState({ hideDialogForCordova: true });
+      $('.MuiDialog-paperScrollPaper').css('display', 'none');  // Manually hide the underlying dialog title
+    }
+  }
+
+  twitterLogOutOnKeyDown (event) {
+    const enterAndSpaceKeyCodes = [13, 32];
+    if (enterAndSpaceKeyCodes.includes(event.keyCode)) {
+      TwitterActions.appLogout();
+    }
+  }
+
+  sendGTMDataLayer = ({ buttonId, destinationPath = '', actionType = 'navigate' }) => {
+    const destinationPage = lookupPageNameAndPageTypeDict(destinationPath);
+    const dataLayerObject = {
+      event: 'action',
+      actionDetails: {
+        actionType,
+        buttonId,
+      },
+      userDetails: VoterStore.getAnalyticsUserDetails(),
+      pageDetails: getPageDetails(),
+      destinationDetails: {
+        destinationPageName: destinationPage.pageName || '',
+        destinationPageType: destinationPage.pageType || '',
+        destinationPathname: destinationPath,
+      },
+    };
+    TagManager.dataLayer({ dataLayer: dataLayerObject });
+  };
+
+  signOut (buttonId = 'signOut_securitySignIn') {
+    // console.log('SignInOptionsPanel.jsx signOut');
+    this.sendGTMDataLayer({
+      buttonId,
+      actionType: 'signOut',
+    });
+    const drawerOpenGlobalVariableName = 'headerProfileDrawerOpen';
+    AppObservableStore.setDrawerOpen(drawerOpenGlobalVariableName, false);
+    VoterSessionActions.voterSignOut();
+  }
+
+  render () {
+    renderLog('SignInOptionsPanel');  // Set LOG_RENDER_EVENTS to log all renders
+    const { inModal, externalUniqueId, pleaseSignInTitle } = this.props;
+    const {
+      facebookAuthResponse, hideCurrentlySignedInHeader,
+      hideAppleSignInButton, hideFacebookSignInButton, hideTwitterSignInButton,
+      hideVoterEmailAddressEntry, hideVoterPhoneEntry, isOnWeVoteRootUrl, isOnWeVotePartnerSubdomainUrl,
+      isOnFacebookSupportedDomainUrl, pleaseSignInTitleFromState, pleaseSignInSubTitle, showRecommendedText, voter, hideDialogForCordova,
+    } = this.state;
+    if (!voter) {
+      return LoadingWheel;
+    }
+
+    const {
+      is_signed_in: voterIsSignedIn,
+      signed_in_facebook: voterIsSignedInFacebook,
+      signed_in_twitter: voterIsSignedInTwitter,
+      signed_in_with_apple: voterIsSignedInWithApple,
+      signed_in_with_email: voterIsSignedInWithEmail,
+      twitter_screen_name: twitterScreenName,
+    } = voter;
+    // console.log("SignInOptionsPanel.jsx facebookAuthResponse:", facebookAuthResponse);
+    // console.log('SignInOptionsPanel hide Apple:', hideAppleSignInButton, ' Facebook: ', hideFacebookSignInButton, ' Twitter: ', hideTwitterSignInButton, ' Email: ', hideVoterEmailAddressEntry, ' Phone: ', hideVoterPhoneEntry);
+    // console.log("SignInOptionsPanel.jsx voter:", voter);
+    if (!voterIsSignedInFacebook && facebookAuthResponse && facebookAuthResponse.length && facebookAuthResponse.facebook_retrieve_attempted) {
+      // console.log('SignInOptionsPanel.jsx facebook_retrieve_attempted');
+      oAuthLog('SignInOptionsPanel facebook_retrieve_attempted');
+      // return <span>SignInOptionsPanel.jsx facebook_retrieve_attempted</span>;
+      return LoadingWheel;
+    }
+
+    let yourAccountTitle = 'Security & Sign In';
+    let yourAccountExplanation = '';
+    if (voterIsSignedIn) {
+      if ((webAppConfig.ENABLE_TWITTER && webAppConfig.ENABLE_TWITTER_AS_VOTER_SIGN_IN_OPTION) && voterIsSignedInFacebook && !voterIsSignedInTwitter && (isOnWeVoteRootUrl || isOnWeVotePartnerSubdomainUrl)) {
+        yourAccountTitle = 'Have Twitter Too?';
+        yourAccountExplanation = 'By adding your Twitter account to your WeVote profile, you get access to the voter guides of everyone you follow.';
+      } else if (webAppConfig.ENABLE_FACEBOOK && voterIsSignedInTwitter && !voterIsSignedInFacebook && isOnFacebookSupportedDomainUrl) {
+        yourAccountTitle = 'Have Facebook Too?';
+        yourAccountExplanation = 'By adding Facebook to your WeVote profile, it is easier for friends to find you.';
+      }
+    }
+
+    // console.log('SignInOptionsPanel voterIsSignedIn', voterIsSignedIn, 'signedInTwitter', voterIsSignedInTwitter, 'signedInFacebook', voterIsSignedInFacebook,
+    //   'signedInWithApple', voterIsSignedInWithApple, 'hideDialogForCordova', hideDialogForCordova, 'hideCurrentlySignedInHeader', hideCurrentlySignedInHeader,
+    //   'hideTwitterSignInButton', hideTwitterSignInButton,
+    //   'hideFacebookSignInButton', hideFacebookSignInButton, 'hideDialogForCordova', hideDialogForCordova,
+    //   '\nisOnFacebookSupportedDomainUrl', isOnFacebookSupportedDomainUrl, 'isOnWeVoteRootUrl', isOnWeVoteRootUrl);
+
+    const isTinyScreen =  isIPhone4in() || isIPhone4p7in() || window.innerWidth <= 375;
+
+    return (
+      <>
+        <SnackNotifier />
+        {!hideDialogForCordova &&
+          <BrowserPushMessage incomingProps={this.props} />}
+        <SignInOptionsPanelWrapper
+          // className={inModal ? 'card-main full-width' : 'card'}
+          style={{ display: `${hideDialogForCordova ? ' none' : 'undefined'}` }}
+        >
+          <Main inModal={inModal} id={`SignInOptionsMain-${externalUniqueId}`}>
+            {voterIsSignedInTwitter && voterIsSignedInFacebook ?
+              null :
+              <h1 className="h3">{!hideTwitterSignInButton && !hideFacebookSignInButton && voterIsSignedIn ? <span>{yourAccountTitle}</span> : null}</h1>}
+            {!hideCurrentlySignedInHeader && (
+              <div>
+                {voterIsSignedIn ?
+                  <div className="u-stack--sm">{yourAccountExplanation}</div> : (
+                    <>
+                      <div className="u-f3" id="pleaseSignInTitle"><span style={{ fontWeight: 600, color: '#4B4B4B' }}>{pleaseSignInTitle || pleaseSignInTitleFromState}</span></div>
+                      <SignInSubtitle className="u-stack--sm" id="signInSubtitle" style={{ paddingBottom: `${isCordova() ? '18px' : ''}` }}>{pleaseSignInSubTitle}</SignInSubtitle>
+                    </>
+                  )}
+              </div>
+            )}
+            {(!voterIsSignedInTwitter || !voterIsSignedInFacebook) && !hideDialogForCordova ? (
+              <>
+                <div className="u-stack--md" style={isAndroid() ? { paddingBottom: '10px', paddingTop: '10px' } : {}}>
+                  { !hideTwitterSignInButton && !voterIsSignedInTwitter && (isOnWeVoteRootUrl || isOnWeVotePartnerSubdomainUrl) && (
+                    <span>
+                      {showRecommendedText &&
+                        <RecommendedText className="u-tl u-stack--sm">Recommended</RecommendedText>}
+                      <TwitterSignIn
+                        buttonText="Sign in with X"
+                        buttonSubmittedText="Signing in..."
+                        inModal={inModal}
+                        closeSignInModal={this.closeSignInModalLocal}
+                        sx={isTinyScreen ? { marginTop: '3px' } : {}}
+                      />
+                    </span>
+                  )}
+                </div>
+                <div className="u-stack--md" style={isAndroid() ? { paddingBottom: '10px', paddingTop: '10px' } : {}}>
+                  { !hideFacebookSignInButton && !voterIsSignedInFacebook && isOnFacebookSupportedDomainUrl && webAppConfig.ENABLE_FACEBOOK && (
+                    <span>
+                      <FacebookSignIn
+                        closeSignInModal={this.closeSignInModalLocal}
+                        buttonSubmittedText="Signing in..."
+                        buttonText="Sign in with Facebook"
+                      />
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : null}
+            {!hideAppleSignInButton && (
+              <AppleSignIn signedIn={voterIsSignedInWithApple} closeSignInModal={this.closeSignInModalLocal} />
+            )}
+            {voterIsSignedIn && !hideDialogForCordova ? (
+              <div className="u-stack--md" style={isAndroid() ? { paddingBottom: '10px', paddingTop: '10px' } : {}}>
+                {!hideCurrentlySignedInHeader && (
+                  <div className="u-stack--sm">
+                    <span className="h3 voterIsSignedIn">Currently Signed In</span>
+                    <span className="u-margin-left--sm" />
+                    <span className="account-edit-action" onKeyDown={this.twitterLogOutOnKeyDown.bind(this)}>
+                      <span
+                        className="pull-right u-link-color u-cursor--pointer"
+                        onClick={this.signOut.bind(this)}
+                        id="signOut_securitySignIn"
+                      >
+                        sign out
+                      </span>
+                    </span>
+                  </div>
+                )}
+                {!hideTwitterSignInButton && voterIsSignedInTwitter && (
+                  <div>
+                    <TwitterContainer className="btn btn-md btn-twitter" href="#">
+                      <Twitter style={{ transform: 'translateX(-100%)' }} />
+                      <span style={{ borderLeft: '1px solid rgba(0,0,0,0.2)', paddingLeft: '20px' }}>
+                        @
+                        {twitterScreenName}
+                      </span>
+                    </TwitterContainer>
+                    <span className="u-margin-left--sm" />
+                  </div>
+                )}
+                {!hideTwitterSignInButton && voterIsSignedInTwitter && (voterIsSignedInFacebook || voterIsSignedInWithEmail) ? (
+                  <div className="u-margin-top--xs">
+                    {this.state.showTwitterDisconnect ? (
+                      <div>
+                        <Button
+                          className="btn-sm"
+                          id={`voterSplitIntoTwoAccounts-${externalUniqueId}`}
+                          onClick={this.voterSplitIntoTwoAccounts}
+                          type="submit"
+                          variant="danger"
+                        >
+                          Are you sure you want to un-link?
+                        </Button>
+                        <span
+                          className="u-margin-left--sm"
+                          id={`toggleTwitterDisconnectClose-${externalUniqueId}`}
+                          onClick={this.toggleTwitterDisconnectClose}
+                        >
+                          cancel
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{ paddingBottom: 8 }}>
+                        <span
+                          id={`toggleTwitterDisconnectOpen-${externalUniqueId}`}
+                          onClick={this.toggleTwitterDisconnectOpen}
+                        >
+                          un-link @
+                          {twitterScreenName}
+                          {' '}
+                          twitter account
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+                {!hideFacebookSignInButton && voterIsSignedInFacebook && (
+                <div>
+                  <FacebookContainer>
+                    <Facebook fontSize="large" style={{ transform: 'translateY(-3px)' }} />
+                  </FacebookContainer>
+                  <span className="u-margin-left--sm" />
+                </div>
+                )}
+              </div>
+            ) : null}
+            <VoterPhoneVerificationEntry
+              closeSignInModal={this.closeSignInModalLocalFromEmailOrPhone}
+              closeVerifyModal={this.closeVerifyModalLocal}
+              doNotRender={hideVoterPhoneEntry}
+              showAllSignInOptions={this.showAllSignInOptions}
+              showPhoneOnlySignIn={this.showPhoneOnlySignIn}
+              showEmailOnlySignIn={this.showEmailOnlySignIn}
+            />
+            {(!hideVoterPhoneEntry && !hideVoterEmailAddressEntry && isWebApp()) && (
+              <OrWrapper>
+                &mdash;
+                or
+                &mdash;
+              </OrWrapper>
+            )}
+            <VoterEmailAddressEntry
+              closeSignInModal={this.closeSignInModalLocalFromEmailOrPhone}
+              closeVerifyModal={this.closeVerifyModalLocal}
+              doNotRender={hideVoterEmailAddressEntry}
+              showAllSignInOptions={this.showAllSignInOptions}
+              showPhoneOnlySignIn={this.showPhoneOnlySignIn}
+              showEmailOnlySignIn={this.showEmailOnlySignIn}
+            />
+            {debugMode && (
+            <div className="text-center">
+              is_signed_in:
+              {' '}
+              {voterIsSignedIn ? <span>True</span> : null}
+              <br />
+              signed_in_facebook:
+              {' '}
+              {voterIsSignedInFacebook ? <span>True</span> : null}
+              <br />
+              signed_in_twitter:
+              {' '}
+              {voterIsSignedInTwitter ? <span>True</span> : null}
+              <br />
+              we_vote_id:
+              {' '}
+              {voter.we_vote_id ? <span>{voter.we_vote_id}</span> : null}
+              <br />
+              email:
+              {' '}
+              {voter.email ? <span>{voter.email}</span> : null}
+              <br />
+              facebook_email:
+              {' '}
+              {voter.facebook_email ? <span>{voter.facebook_email}</span> : null}
+              <br />
+              facebook_profile_image_url_https:
+              {' '}
+              {voter.facebook_profile_image_url_https ? <span>{voter.facebook_profile_image_url_https}</span> : null}
+              <br />
+              first_name:
+              {' '}
+              {voter.first_name ? <span>{voter.first_name}</span> : null}
+              <br />
+              facebook_id:
+              {' '}
+              {voter.facebook_id ? <span>{voter.facebook_id}</span> : null}
+              <br />
+            </div>
+            )}
+            <SignInOptionsTermsWrapper id="terms_Wrapper">
+              <ByContinuingNotice cordovaClose={this.closeSignInModalLocal} />
+            </SignInOptionsTermsWrapper>
+          </Main>
+        </SignInOptionsPanelWrapper>
+      </>
+    );
+  }
+}
+SignInOptionsPanel.propTypes = {
+  externalUniqueId: PropTypes.string,
+  inModal: PropTypes.bool,
+  pleaseSignInTextOff: PropTypes.bool,
+  pleaseSignInTitle: PropTypes.node,
+  pleaseSignInSubTitle: PropTypes.node,
+  closeSignInModal: PropTypes.func,
+  focusedOnSingleInputToggle: PropTypes.func,
+};
+
+const OrWrapper = styled('div')(({ theme }) => (`
+  color: #999;
+  margin-bottom: 30px;
+  margin-top: 0;
+  ${theme.breakpoints.down('sm')} {
+    margin-bottom: -2px;
+    margin-top: 0;
+  }
+`));
+
+const SignInOptionsTermsWrapper = styled('div')(({ theme }) => (`
+  margin-top: 30px;
+  // font-weight: 600;
+  // ${theme.breakpoints.down('sm')} {
+  //   padding-top: 30px;
+  // }
+`));
+
+const Main = styled('div', {
+  shouldForwardProp: (prop) => !['inModal'].includes(prop),
+})(({ inModal }) => (`
+  margin-top: ${inModal ? '-16px' : '0'};
+  max-width: 500px;
+  padding: ${inModal ? '0' : '16px'};
+  text-align: center;
+  padding-top: 0;
+  width: 100%;
+`));
+
+const SignInOptionsPanelWrapper = styled('div')`
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  ${() => (isCordova() ? { paddingTop: '10px' } : {})}
+`;
+
+const SignInSubtitle = styled('p')`
+  font-weight: 500;
+  font-size: 16px;
+  margin-bottom: 24px;
+`;
+
+const RecommendedText = styled('p')`
+  margin: 0;
+  color: #333;
+  font-weight: bold;
+  font-size: 16px;
+`;
+
+const TwitterContainer = styled('span')`
+  color: #fff !important;
+  background-color: #55acee !important;
+  border-color: rgba(0,0,0,0.2);
+  position: relative;
+  padding-left: 44px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 225px;
+`;
+
+const FacebookContainer = styled('div')`
+  background-color: #3b5998 !important;
+  border-color: rgba(0,0,0,0.2);
+  border-radius: 0.3rem;
+  color: #fff;
+  display: inline-block;
+  height: 40px;
+  line-height: 1.5;
+  padding: 0.375rem 0.75rem;
+  text-align: center;
+  width: 225px;
+`;

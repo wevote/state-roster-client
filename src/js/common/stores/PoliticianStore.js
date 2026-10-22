@@ -1,0 +1,705 @@
+import { ReduceStore } from 'flux/utils';
+import OfficeActions from '../../actions/OfficeActions';
+import Dispatcher from '../dispatcher/Dispatcher';
+
+import { mostLikelyOfficeDictFromList } from '../../utils/candidateFunctions';
+import { extractNumberOfPositionsFromPositionList } from '../../utils/positionFunctions'; // eslint-disable-line import/no-cycle
+import OfficeStore from '../../stores/OfficeStore';
+import VoterStore from '../../stores/VoterStore';
+import arrayContains from '../utils/arrayContains';
+// import useVoterCanEditPolitician from '../../hooks/useVoterCanEditPolitician';
+
+class PoliticianStore extends ReduceStore {
+  getInitialState () {
+    return {
+      allCachedContestOfficeWeVoteIdsByPolitician: {}, // Dictionary with politician_we_vote_id as key and ContestOfficeWeVoteIdList as value
+      allCachedCandidateListsByPolitician: {}, // Dictionary with politician_we_vote_id as key and list of candidates under politician
+      allCachedPoliticianNewsItems: {}, // Dictionary with politician_news_item_we_vote_id key and the PoliticianNews as value
+      allCachedNewsItemWeVoteIdsByPolitician: {}, // Dictionary with politician_we_vote_id as key and the PoliticianNews for this voter as value
+      allCachedPoliticianOwners: {}, // key == politicianWeVoteId, value = list of owners of this politician
+      allCachedPoliticianOwnerPhotos: {}, // key == politicianWeVoteId, value = Tiny Profile Photo to show
+      allCachedPoliticianWeVoteIdsBySEOFriendlyPath: {}, // key == politicianSEOFriendlyPath, value = politicianWeVoteId
+      allCachedPoliticians: {}, // key == politicianWeVoteId, value = the Politician
+      allCachedPositionsAboutPoliticians: {}, // Dictionary with politician_we_vote_id as one key, organization_we_vote_id as the second key, and the position as value
+      allCachedRepresentativeListsByPolitician: {}, // Dictionary with politician_we_vote_id as key and list of representatives under politician
+      politicianDataNotFoundForSEOFriendlyPathList: [], // List of seo_friendly_paths for which a politician could not be found on API server
+      politicianEmailQueuedToSave: '',
+      politicianEmailQueuedToSaveSet: false,
+      politicianNameQueuedToSave: '',
+      politicianNameQueuedToSaveSet: false,
+      politicianQueryResultsWeVoteIds: [], // politician_we_vote_id's returned by the most recent politiciansQuery/politiciansRetrieve, as opposed to ones individually cached via politicianRetrieve
+      politicianPhotoQueuedToSave: '',
+      politicianPhotoQueuedToSaveSet: false,
+      politicianPhotoTooBig: false,
+      voterCanSendUpdatesPoliticianWeVoteIds: [], // These are the politician_we_vote_id's of the politicians this voter can send updates to
+      voterCanVoteForPoliticianWeVoteIds: [], // These are the politician_we_vote_id's this voter can vote for
+      voterOwnedPoliticianWeVoteIds: [], // These are the politician_we_vote_id's of the politicians this voter can edit
+      voterStartedPoliticianWeVoteIds: [], // These are the politician_we_vote_id's of the politicians this voter started
+      voterSupportedPoliticianWeVoteIds: [], // These are the politician_we_vote_id's of the politicians this voter supports
+      voterWeVoteId: '',
+    };
+  }
+
+  resetVoterSpecificData () {
+    return {
+      allCachedPoliticianWeVoteIdsBySEOFriendlyPath: {}, // key == politicianSEOFriendlyPath, value = politicianWeVoteId
+      voterCanSendUpdatesPoliticianWeVoteIds: [], // These are the politician_we_vote_id's of the politicians this voter can send updates to
+      voterCanVoteForPoliticianWeVoteIds: [], // These are the politician_we_vote_id's this voter can vote for
+      voterOwnedPoliticianWeVoteIds: [], // These are the politician_we_vote_id's of the politicians this voter can edit
+      voterStartedPoliticianWeVoteIds: [], // These are the politician_we_vote_id's of the politicians this voter started
+      voterSupportedPoliticianWeVoteIds: [], // These are the politician_we_vote_id's of the politicians this voter supports
+      voterWeVoteId: '',
+    };
+  }
+
+  getAllCachedPositionsDictByPoliticianWeVoteId (politicianWeVoteId) {
+    return this.getState().allCachedPositionsAboutPoliticians[politicianWeVoteId] || {};
+  }
+
+  getAllCachedPositionsByPoliticianWeVoteId (politicianWeVoteId) {
+    const allCachedPositionsForThisPoliticianDict = this.getState().allCachedPositionsAboutPoliticians[politicianWeVoteId] || {};
+    return Object.values(allCachedPositionsForThisPoliticianDict);
+  }
+
+  getAnalyticsPoliticianDetails (politicianWeVoteId) {
+    const politician = this.getPoliticianByWeVoteId(politicianWeVoteId);
+    const isClaimedProfileDateTime = politician ? politician.is_claimed_profile_date_time || '' : '';
+    return {
+      isClaimedProfile: politician ? politician.is_claimed_profile : false,
+      isClaimedProfileDateTime,
+      image: politician ? politician.we_vote_hosted_profile_image_url_medium : '',
+      politicalParty: politician ? politician.political_party : '',
+      politicianName: politician ? this.getPoliticianName(politicianWeVoteId) : '',
+      politicianWeVoteId,
+      stateCode: politician ? (politician.state_code || 'na').toUpperCase() : '',
+      // voterCanEdit: useVoterCanEditPolitician(),
+    };
+  }
+
+  getPoliticianListByOfficeWeVoteId (officeWeVoteId) {
+    // console.log('officeWeVoteId:', officeWeVoteId, ', this.getState().politicianListsByOfficeWeVoteId:', this.getState().politicianListsByOfficeWeVoteId);
+    const politicianListsDict = this.getState().politicianListsByOfficeWeVoteId;
+    if (politicianListsDict) {
+      return politicianListsDict[officeWeVoteId] || [];
+    } else {
+      return [];
+    }
+  }
+
+  getPoliticianList () {
+    const politicianList = Object.values(this.getState().allCachedPoliticians);
+    return politicianList || [];
+  }
+
+  // Unlike getPoliticianList (which returns every politician ever cached, including ones pulled in one-at-a-time by
+  // politicianRetrieve, e.g. when a candidate's side drawer is opened), this only returns the politicians returned by
+  // the most recent politiciansQuery/politiciansRetrieve call (e.g. "top politicians for this state").
+  getPoliticianQueryResultsList () {
+    const { allCachedPoliticians, politicianQueryResultsWeVoteIds } = this.getState();
+    return politicianQueryResultsWeVoteIds
+      .map((politicianWeVoteId) => allCachedPoliticians[politicianWeVoteId])
+      .filter((politician) => !!politician);
+  }
+
+  getPoliticianName (politicianWeVoteId) {
+    const politician = this.getState().allCachedPoliticians[politicianWeVoteId] || {};
+    if (politician) {
+      return politician.ballot_item_display_name ||
+        politician.politician_name ||
+        politician.display_name ||
+        '';
+    }
+    return '';
+  }
+
+  getPoliticalParty (politicianWeVoteId) {
+    const politician = this.getState().allCachedPoliticians[politicianWeVoteId] || {};
+    if (politician) {
+      return politician.political_party || '';
+    }
+    return '';
+  }
+
+  getMostLikelyOfficeDictFromPoliticianWeVoteId (politicianWeVoteId) {
+    const politician = this.getPoliticianByWeVoteId(politicianWeVoteId);
+    // console.log('getMostLikelyOfficeDictFromPoliticianWeVoteId politician:', politician)
+    if (politician && politician.contest_office_list && politician.contest_office_list[0]) {
+      return mostLikelyOfficeDictFromList(politician.contest_office_list);
+    }
+    // Not ideal
+    // console.log('getMostLikelyOfficeDictFromPoliticianWeVoteId falling back on politician.contest_office_we_vote_id');
+    return {
+      contest_office_name: politician.contest_office_name,
+      contest_office_we_vote_id: politician.contest_office_we_vote_id,
+      election_day_text: politician.election_day_text,
+      google_civic_election_id: politician.google_civic_election_id,
+      state_code: politician.state_code,
+    };
+  }
+
+  getPoliticianBySEOFriendlyPath (politicianSEOFriendlyPath) {
+    const politicianWeVoteId = this.getState().allCachedPoliticianWeVoteIdsBySEOFriendlyPath[politicianSEOFriendlyPath] || '';
+    const politician = this.getState().allCachedPoliticians[politicianWeVoteId];
+    // console.log('PoliticianStore getPoliticianBySEOFriendlyPath politicianSEOFriendlyPath:', politicianSEOFriendlyPath, ', politicianWeVoteId:', politicianWeVoteId, ', politician:', politician);
+    if (politician === undefined) {
+      return {};
+    }
+    return politician;
+  }
+
+  getPoliticianEmailQueuedToSave () {
+    return this.getState().politicianEmailQueuedToSave;
+  }
+
+  getPoliticianEmailQueuedToSaveSet () {
+    return this.getState().politicianEmailQueuedToSaveSet;
+  }
+
+  getPoliticianNameQueuedToSave () {
+    return this.getState().politicianNameQueuedToSave;
+  }
+
+  getPoliticianNameQueuedToSaveSet () {
+    return this.getState().politicianNameQueuedToSaveSet;
+  }
+
+  getPoliticianProfileUploadedImageUrlLarge (politicianWeVoteId) {
+    const politician = this.getPoliticianByWeVoteId(politicianWeVoteId);
+    if (politician) {
+      return politician.we_vote_hosted_profile_uploaded_image_url_large || '';
+    } else {
+      return '';
+    }
+  }
+
+  getPoliticianPhotoQueuedToSave () {
+    return this.getState().politicianPhotoQueuedToSave;
+  }
+
+  getPoliticianPhotoQueuedToSaveSet () {
+    return this.getState().politicianPhotoQueuedToSaveSet;
+  }
+
+  getPoliticianPhotoTooBig () {
+    return this.getState().politicianPhotoTooBig || false;
+  }
+
+  getPoliticianListVoterCanEdit () {
+    const politiciansVoterCanEdit = [];
+    const { allCachedPoliticians, voterOwnedPoliticianWeVoteIds } = this.getState();
+
+    if (voterOwnedPoliticianWeVoteIds && voterOwnedPoliticianWeVoteIds.length > 0) {
+      voterOwnedPoliticianWeVoteIds.forEach((politicianWeVoteId) => {
+        if (allCachedPoliticians[politicianWeVoteId]) {
+          politiciansVoterCanEdit.push(allCachedPoliticians[politicianWeVoteId]);
+        }
+      });
+    }
+    return politiciansVoterCanEdit;
+  }
+
+  getPoliticianWeVoteIdFromPoliticianSEOFriendlyPath (politicianSEOFriendlyPath) {
+    return this.getState().allCachedPoliticianWeVoteIdsBySEOFriendlyPath[politicianSEOFriendlyPath] || '';
+  }
+
+  getNumberOfPositionsByPoliticianWeVoteId (politicianWeVoteId) {
+    let numberOfAllSupportPositions = 0;
+    let numberOfAllOpposePositions = 0;
+    let numberOfAllInfoOnlyPositions = 0;
+    if (this.getAllCachedPositionsByPoliticianWeVoteId(politicianWeVoteId)) {
+      const results = extractNumberOfPositionsFromPositionList(this.getAllCachedPositionsByPoliticianWeVoteId(politicianWeVoteId));
+      ({ numberOfAllSupportPositions, numberOfAllOpposePositions, numberOfAllInfoOnlyPositions } = results);
+    }
+    return {
+      numberOfAllSupportPositions,
+      numberOfAllOpposePositions,
+      numberOfAllInfoOnlyPositions,
+    };
+  }
+
+  getPoliticianByWeVoteId (politicianWeVoteId) {
+    const politician = this.getState().allCachedPoliticians[politicianWeVoteId];
+    if (politician === undefined) {
+      return {};
+    }
+    return politician;
+  }
+
+  getPoliticianAllEmails (politicianWeVoteId) {
+    const politician = this.getPoliticianByWeVoteId(politicianWeVoteId);
+    // console.log('getPoliticianAllEmails politician:', politician, ', politicianWeVoteId:', politicianWeVoteId);
+    if (politician && (politician.politician_email || politician.politician_email2 || politician.politician_email3)) {
+      return [politician.politician_email, politician.politician_email2, politician.politician_email3].filter(Boolean);
+    }
+    return [];
+  }
+
+  getPositionAboutPoliticianFromOrganization (politicianWeVoteId, orgWeVoteId) {
+    const positionsAboutPolitician = this.getAllCachedPositionsDictByPoliticianWeVoteId(politicianWeVoteId);
+    // console.log('PoliticianStore, politicianId: ', politicianId, 'organization_we_vote_id: ', organization_we_vote_id);
+    // console.log('PoliticianStore, getPositionAboutPoliticianFromOrganization: ', positions_about_politician[organization_we_vote_id]);
+    return positionsAboutPolitician[orgWeVoteId] || [];
+  }
+
+  getVoterCanEditThisPolitician (politicianWeVoteId = '') {
+    // console.log('getVoterCanEditThisPolitician:', politicianWeVoteId, ', YES: ', arrayContains(politicianWeVoteId, this.getState().voterOwnedPoliticianWeVoteIds), 'voterOwnedPoliticianWeVoteIds: ', this.getState().voterOwnedPoliticianWeVoteIds);
+    return arrayContains(politicianWeVoteId, this.getState().voterOwnedPoliticianWeVoteIds);
+  }
+
+  getVoterSupportsThisPolitician (politicianWeVoteId) {
+    // console.log('this.getState().voterSupportedPoliticianWeVoteIds:', this.getState().voterSupportedPoliticianWeVoteIds);
+    return arrayContains(politicianWeVoteId, this.getState().voterSupportedPoliticianWeVoteIds);
+  }
+
+  isPoliticianDataNotFoundForSEOFriendlyPath (politicianSEOFriendlyPath) {
+    if (!politicianSEOFriendlyPath || politicianSEOFriendlyPath === '') return false;
+    const { politicianDataNotFoundForSEOFriendlyPathList } = this.getState();
+    // console.log('PoliticianStore politicianDataNotFoundForSEOFriendlyPathList:', politicianDataNotFoundForSEOFriendlyPathList);
+    // If a valid index is found when searching for the path
+    //  in politicianDataNotFoundForSEOFriendlyPathList, then we found it and this means
+    //  we could not retrieve data for that path, and so we know data was not found
+    return (politicianDataNotFoundForSEOFriendlyPathList.indexOf(politicianSEOFriendlyPath) !== -1);
+  }
+
+  isPoliticianInStore (politicianId) {
+    const politician = this.getState().allCachedPoliticians[politicianId] || {};
+    if (politician.politician_we_vote_id) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  createPoliticianPosition (onePoliticianWeVoteId, oneVoterGuide) {
+    const politicianObject = this.getPoliticianByWeVoteId(onePoliticianWeVoteId);
+    // console.log('politicianObject: ', politicianObject);
+    // console.log('createPoliticianPosition oneVoterGuide: ', oneVoterGuide);
+    const onePosition = {
+      position_we_vote_id: '', // Currently empty
+      ballot_item_display_name: politicianObject.ballot_item_display_name,
+      ballot_item_image_url_https_large: politicianObject.politician_photo_url_large,
+      ballot_item_image_url_https_medium: politicianObject.politician_photo_url_medium,
+      ballot_item_image_url_https_tiny: politicianObject.politician_photo_url_tiny,
+      ballot_item_twitter_handle: politicianObject.twitter_handle,
+      ballot_item_political_party: politicianObject.party,
+      kind_of_ballot_item: 'CANDIDATE',
+
+      // ballot_item_id: 0,
+      ballot_item_we_vote_id: onePoliticianWeVoteId,
+
+      ballot_item_state_code: politicianObject.state_code,
+      contest_office_id: politicianObject.contest_office_id,
+      contest_office_we_vote_id: politicianObject.contest_office_we_vote_id,
+      contest_office_name: politicianObject.contest_office_name,
+      is_support: false,  // These are filled in later
+      is_positive_rating: false,
+      is_support_or_positive_rating: false,
+      is_oppose: false,
+      is_negative_rating: false,
+      is_oppose_or_negative_rating: false,
+      is_information_only: false,
+      is_public_position: true,
+      organization_we_vote_id: oneVoterGuide.organization_we_vote_id,
+      speaker_we_vote_id: oneVoterGuide.organization_we_vote_id,
+      speaker_display_name: oneVoterGuide.voter_guide_display_name,
+      speaker_image_url_https_large: oneVoterGuide.voter_guide_image_url_large,
+      speaker_image_url_https_medium: oneVoterGuide.voter_guide_image_url_medium,
+      speaker_image_url_https_tiny: oneVoterGuide.voter_guide_image_url_tiny,
+      speaker_twitter_handle: oneVoterGuide.twitter_handle,
+      speaker_type: oneVoterGuide.voter_guide_owner_type,
+      voter_guide_we_vote_id: oneVoterGuide.we_vote_id,
+      vote_smart_rating: '',
+      vote_smart_time_span: '',
+      google_civic_election_id: oneVoterGuide.google_civic_election_id,
+
+      // state_code: '',
+      more_info_url: '',
+      statement_text: '',
+      last_updated: '',
+    };
+    // console.log('PoliticianStore, voterGuidesToFollowRetrieve, onePosition: ', onePosition);
+    return onePosition;
+  }
+
+  extractPoliticianCandidateList (politician, allCachedCandidateListsByPoliticianIncoming) {
+    let allCachedCandidateListsByPolitician = allCachedCandidateListsByPoliticianIncoming;
+    // console.log('extractPoliticianCandidateList politician:', politician);
+    if (!allCachedCandidateListsByPolitician) {
+      allCachedCandidateListsByPolitician = {};
+    }
+    for (let i = 0; i < politician.candidate_list.length; ++i) {
+      // console.log('PoliticianStore candidate_list i: ', i, ', one_owner: ', politician.candidate_list[i]);
+      // TODO In order to get the name of the office the politician is running for (future), use this starting code...
+      // if (politician.candidate_list[i].organization_we_vote_id &&
+      //     politician.candidate_list[i].organization_we_vote_id === linkedOrganizationWeVoteId) {
+      //   if (!(arrayContains(politician.politician_we_vote_id, voterOwnedPoliticianWeVoteIds))) {
+      //     voterOwnedPoliticianWeVoteIds.push(politician.politician_we_vote_id);
+      //   }
+      // }
+    }
+    allCachedCandidateListsByPolitician[politician.politician_we_vote_id] = politician.candidate_list;
+
+    return {
+      allCachedCandidateListsByPolitician,
+    };
+  }
+
+  extractPoliticianOwnerList (politician, allCachedPoliticianOwnersIncoming, allCachedPoliticianOwnerPhotosIncoming, voterCanSendUpdatesPoliticianWeVoteIdsIncoming, voterOwnedPoliticianWeVoteIdsIncoming) {
+    const allCachedPoliticianOwners = allCachedPoliticianOwnersIncoming;
+    const allCachedPoliticianOwnerPhotos = allCachedPoliticianOwnerPhotosIncoming;
+    const politicianOwnersFiltered = [];
+    let featuredProfileImageFound = false;
+    let firstProfileImageFound = false;
+    let useThisProfileImage = false;
+    const voterCanSendUpdatesPoliticianWeVoteIds = voterCanSendUpdatesPoliticianWeVoteIdsIncoming;
+    const voterOwnedPoliticianWeVoteIds = voterOwnedPoliticianWeVoteIdsIncoming;
+    const linkedOrganizationWeVoteId = VoterStore.getLinkedOrganizationWeVoteId();
+    // console.log('extractPoliticianOwnerList politician:', politician);
+    if (politician.voter_can_send_updates_to_politician) {
+      if (!(arrayContains(politician.politician_we_vote_id, voterCanSendUpdatesPoliticianWeVoteIds))) {
+        voterCanSendUpdatesPoliticianWeVoteIds.push(politician.politician_we_vote_id);
+      }
+    }
+    if (politician.voter_is_politician_owner) {
+      if (!(arrayContains(politician.politician_we_vote_id, voterOwnedPoliticianWeVoteIds))) {
+        voterOwnedPoliticianWeVoteIds.push(politician.politician_we_vote_id);
+      }
+    }
+    for (let i = 0; i < politician.politician_owner_list.length; ++i) {
+      // console.log('CampaignStore owner_list i: ', i, ', one_owner: ', politician.politician_owner_list[i]);
+      if (politician.politician_owner_list[i].organization_we_vote_id &&
+          politician.politician_owner_list[i].organization_we_vote_id === linkedOrganizationWeVoteId) {
+        if (!(arrayContains(politician.politician_we_vote_id, voterOwnedPoliticianWeVoteIds))) {
+          voterOwnedPoliticianWeVoteIds.push(politician.politician_we_vote_id);
+        }
+      }
+      if (politician.politician_owner_list[i].visible_to_public) {
+        if (politician.politician_owner_list[i].organization_name) {
+          politicianOwnersFiltered.push(politician.politician_owner_list[i]);
+        }
+        if (politician.politician_owner_list[i].we_vote_hosted_profile_image_url_tiny) {
+          if (politician.politician_owner_list[i].feature_this_profile_image) {
+            if (!featuredProfileImageFound) {
+              // Always use the first profile image found which is featured
+              useThisProfileImage = true;
+            }
+            featuredProfileImageFound = true;
+            firstProfileImageFound = true;
+          }
+          if (!featuredProfileImageFound && !firstProfileImageFound) {
+            // Use this image if it is the first image found and a featured image hasn't already been found
+            useThisProfileImage = true;
+          }
+          if (useThisProfileImage) {
+            allCachedPoliticianOwnerPhotos[politician.politician_we_vote_id] = politician.politician_owner_list[i].we_vote_hosted_profile_image_url_tiny;
+          }
+        }
+      }
+    }
+    allCachedPoliticianOwners[politician.politician_we_vote_id] = politicianOwnersFiltered;
+
+    return {
+      allCachedPoliticianOwners,
+      allCachedPoliticianOwnerPhotos,
+      voterCanSendUpdatesPoliticianWeVoteIds,
+      voterOwnedPoliticianWeVoteIds,
+    };
+  }
+
+  reduce (state, action) {
+    const {
+      allCachedPoliticianNewsItems,
+      allCachedPoliticianWeVoteIdsBySEOFriendlyPath, allCachedNewsItemWeVoteIdsByPolitician,
+      politicianDataNotFoundForSEOFriendlyPathList,
+      voterSupportedPoliticianWeVoteIds,
+    } = state;
+    let {
+      allCachedPoliticians, allCachedPoliticianOwners, allCachedCandidateListsByPolitician, allCachedPoliticianOwnerPhotos,
+      politicianListsByOfficeWeVoteId, politicianQueryResultsWeVoteIds,
+      voterCanSendUpdatesPoliticianWeVoteIds, voterCanVoteForPoliticianWeVoteIds, voterOwnedPoliticianWeVoteIds,
+      // voterStartedPoliticianWeVoteIds,
+    } = state;
+    // We don't want to exit here. We want to fail differently for each type below.
+    // if (!action.res || !action.res.success) return state;
+
+    let localPoliticianList;
+    let officeNameFromOpponents;
+    let officeWeVoteIdFromOpponents;
+    let opponentCandidateList;
+    let politician;
+    let politicianList;
+    let politicianNewsItem = {};
+    let politicianNewsItemWeVoteIds = [];
+    let politicianManaged = {};
+    let revisedState;
+    let voterSpecificData;
+    switch (action.type) {
+      case 'politicianEmailQueuedToSave':
+        // console.log('PoliticianStore politicianEmailQueuedToSave: ', action.payload);
+        if (action.payload === undefined) {
+          return {
+            ...state,
+            politicianEmailQueuedToSave: '',
+            politicianEmailQueuedToSaveSet: false,
+          };
+        } else {
+          return {
+            ...state,
+            politicianEmailQueuedToSave: action.payload,
+            politicianEmailQueuedToSaveSet: true,
+          };
+        }
+
+      case 'politicianNameQueuedToSave':
+        // console.log('VoterStore politicianNameQueuedToSave: ', action.payload);
+        if (action.payload === undefined) {
+          return {
+            ...state,
+            politicianNameQueuedToSave: '',
+            politicianNameQueuedToSaveSet: false,
+          };
+        } else {
+          return {
+            ...state,
+            politicianNameQueuedToSave: action.payload,
+            politicianNameQueuedToSaveSet: true,
+          };
+        }
+
+      case 'politicianPhotoQueuedToSave':
+        // console.log('VoterStore politicianPhotoQueuedToSave: ', action.payload);
+        if (action.payload === undefined) {
+          return {
+            ...state,
+            politicianPhotoQueuedToSave: '',
+            politicianPhotoQueuedToSaveSet: false,
+          };
+        } else {
+          return {
+            ...state,
+            politicianPhotoQueuedToSave: action.payload,
+            politicianPhotoQueuedToSaveSet: true,
+          };
+        }
+
+      case 'politicianRetrieve':
+      case 'politicianRetrieveAsOwner':
+      case 'politicianSave':
+        // See CampaignSupporterStore for code to take in the following politician values:
+        // - latest_politician_supporter_endorsement_list
+        // - latest_politician_supporter_list
+        // - voter_politician_supporter
+        if (!action.res || !action.res.success) {
+          revisedState = state;
+          if (action.res && action.res.seo_friendly_path) {
+            // Incoming seo_friendly_path cannot be found on API server, so we track that
+            if (politicianDataNotFoundForSEOFriendlyPathList.indexOf(action.res.seo_friendly_path) === -1) {
+              politicianDataNotFoundForSEOFriendlyPathList.push(action.res.seo_friendly_path);
+              // console.log('PoliticianStore politicianRetrieve, PUSHED seo_friendly_path:', action.res.seo_friendly_path);
+              revisedState = { ...revisedState, politicianDataNotFoundForSEOFriendlyPathList };
+            }
+          }
+          return revisedState;
+        }
+        revisedState = state;
+        politician = action.res;
+        // console.log('PoliticianStore ', action.type, ', politician:', politician);
+        opponentCandidateList = action.res.opponent_candidate_list || [];
+        // console.log('PoliticianStore politicianRetrieve, politician:', politician);
+        if (allCachedPoliticians === undefined) {
+          allCachedPoliticians = {};
+        }
+        // //////////////////////////////
+        // Process information about the opponents of this politician
+        // Figure out the contest_office_we_vote_id the opponents ran in opposite this politician
+        opponentCandidateList.forEach((one) => {
+          if (one && one.contest_office_we_vote_id) {
+            officeWeVoteIdFromOpponents = one.contest_office_we_vote_id;
+          }
+          if (one && one.contest_office_name) {
+            officeNameFromOpponents = one.contest_office_name;
+          }
+        });
+        // //////////////////////////////
+        // Store the politician
+        allCachedPoliticians[politician.politician_we_vote_id] = {
+          ...politician,
+          contest_office_we_vote_id: officeWeVoteIdFromOpponents,
+          contest_office_name: officeNameFromOpponents,
+        };
+        if ('politician_news_item_list' in politician) {
+          politicianNewsItemWeVoteIds = [];
+          for (let i = 0; i < politician.politician_news_item_list.length; ++i) {
+            politicianNewsItem = politician.politician_news_item_list[i];
+            allCachedPoliticianNewsItems[politicianNewsItem.politician_news_item_we_vote_id] = politicianNewsItem;
+            politicianNewsItemWeVoteIds.push(politicianNewsItem.politician_news_item_we_vote_id);
+          }
+          if (politician.politician_news_item_list.length > 0) {
+            allCachedNewsItemWeVoteIdsByPolitician[politicianNewsItem.politician_we_vote_id] = politicianNewsItemWeVoteIds;
+          }
+        }
+        // if ('politician_owner_list' in politician) {
+        ({
+          allCachedPoliticianOwners,
+          allCachedPoliticianOwnerPhotos,
+          voterCanSendUpdatesPoliticianWeVoteIds,
+          voterOwnedPoliticianWeVoteIds,
+        } = this.extractPoliticianOwnerList(politician, allCachedPoliticianOwners, allCachedPoliticianOwnerPhotos, voterCanSendUpdatesPoliticianWeVoteIds, voterOwnedPoliticianWeVoteIds));
+        // }
+        if ('candidate_list' in politician) {
+          ({ allCachedCandidateListsByPolitician } = this.extractPoliticianCandidateList(politician, allCachedCandidateListsByPolitician));
+          // We might want to put allCachedPoliticianOffices in this store, or we might want to put that in the OfficeStore,
+          //  and use allCachedContestOfficeWeVoteIdsByPolitician
+        }
+        if ('representative_list' in politician) {
+          ({ allCachedCandidateListsByPolitician } = this.extractPoliticianCandidateList(politician, allCachedCandidateListsByPolitician));
+          // We might want to put allCachedPoliticianOffices in this store, or we might want to put that in the OfficeStore,
+          //  and use allCachedContestOfficeWeVoteIdsByPolitician
+        }
+        if (!(politician.seo_friendly_path in allCachedPoliticianWeVoteIdsBySEOFriendlyPath)) {
+          allCachedPoliticianWeVoteIdsBySEOFriendlyPath[politician.seo_friendly_path] = politician.politician_we_vote_id;
+        }
+        // Link alternate SEOFriendlyPaths to politician_we_vote_id
+        if (politician.seo_friendly_path_list) {
+          for (let i = 0; i < politician.seo_friendly_path_list.length; ++i) {
+            if (!(politician.seo_friendly_path_list[i] in allCachedPoliticianWeVoteIdsBySEOFriendlyPath)) {
+              allCachedPoliticianWeVoteIdsBySEOFriendlyPath[politician.seo_friendly_path_list[i]] = politician.politician_we_vote_id;
+            }
+          }
+        }
+        if (action.res.seo_friendly_path) {
+          const foundIndex = politicianDataNotFoundForSEOFriendlyPathList.indexOf(action.res.seo_friendly_path);
+          if (foundIndex !== -1) {
+            // If the incoming seo_friendly_path is found, remove from politicianDataNotFoundForSEOFriendlyPathList
+            politicianDataNotFoundForSEOFriendlyPathList.splice(foundIndex, 1);
+            revisedState = { ...revisedState, politicianDataNotFoundForSEOFriendlyPathList };
+          }
+        }
+        // console.log('PoliticianStore allCachedPoliticianOwners:', allCachedPoliticianOwners);
+        if (action.res.voter_can_vote_for_politician_we_vote_ids) {
+          // We want to reset this variable with this incoming value
+          voterCanVoteForPoliticianWeVoteIds = action.res.voter_can_vote_for_politician_we_vote_ids;
+          revisedState = { ...revisedState, voterCanVoteForPoliticianWeVoteIds };
+        }
+        if ('voter_politician_supporter' in action.res) {
+          if ('politician_supported' in action.res.voter_politician_supporter) {
+            //
+            // console.log('action.res.voter_politician_supporter.politician_supported:', action.res.voter_politician_supporter.politician_supported);
+            if (action.res.voter_politician_supporter.politician_supported) {
+              if (!(action.res.voter_politician_supporter.politician_we_vote_id in voterSupportedPoliticianWeVoteIds)) {
+                voterSupportedPoliticianWeVoteIds.push(action.res.voter_politician_supporter.politician_we_vote_id);
+                revisedState = { ...revisedState, voterSupportedPoliticianWeVoteIds };
+              }
+            }
+          }
+        }
+        revisedState = { ...revisedState, allCachedPoliticians };
+        revisedState = { ...revisedState, allCachedPoliticianNewsItems };
+        revisedState = { ...revisedState, allCachedPoliticianOwners };
+        revisedState = { ...revisedState, allCachedPoliticianOwnerPhotos };
+        revisedState = { ...revisedState, allCachedCandidateListsByPolitician };
+        revisedState = { ...revisedState, allCachedPoliticianWeVoteIdsBySEOFriendlyPath };
+        revisedState = { ...revisedState, allCachedNewsItemWeVoteIdsByPolitician };
+        revisedState = { ...revisedState, voterCanSendUpdatesPoliticianWeVoteIds };
+        revisedState = { ...revisedState, voterOwnedPoliticianWeVoteIds };
+        return revisedState;
+
+      case 'politiciansManagedRetrieve':
+        if (!action.res || !action.res.success) return state;
+        revisedState = state;
+        if (action.res.politicians_managed_list) {
+          voterOwnedPoliticianWeVoteIds = []; // Reset the whole list
+          for (let i = 0; i < action.res.politicians_managed_list.length; ++i) {
+            politicianManaged = action.res.politicians_managed_list[i];
+            if (!(politicianManaged.politician_we_vote_id in voterOwnedPoliticianWeVoteIds)) {
+              voterOwnedPoliticianWeVoteIds.push(politicianManaged.politician_we_vote_id);
+            }
+            if (!(politicianManaged.politician_we_vote_id in allCachedPoliticians)) {
+              // Temporarily store a stub of politician data so we can access politician name
+              allCachedPoliticians[politicianManaged.politician_we_vote_id] = politicianManaged;
+            }
+          }
+        } else {
+          voterOwnedPoliticianWeVoteIds = [];
+        }
+        revisedState = { ...revisedState, voterOwnedPoliticianWeVoteIds };
+        return revisedState;
+
+      case 'politiciansQuery':
+      case 'politiciansRetrieve':
+        if (!action.res || !action.res.success) return state;
+        // Make sure we have information for the office the politician is running for
+        if (action.res.contest_office_we_vote_id) {
+          const office = OfficeStore.getOffice(action.res.contest_office_we_vote_id);
+          if (!office || !office.ballot_item_display_name) {
+            OfficeActions.officeRetrieve(action.res.contest_office_we_vote_id);
+          }
+        }
+
+        if (action.type === 'politiciansQuery') {
+          politicianList = action.res.politicians || [];
+        } else {
+          politicianList = action.res.politician_list || [];
+        }
+        // console.log('PoliticianStore politiciansRetrieve politicianList:', politicianList);
+        if (!politicianListsByOfficeWeVoteId) {
+          politicianListsByOfficeWeVoteId = {};
+        }
+        localPoliticianList = [];
+        politicianQueryResultsWeVoteIds = [];
+        politicianList.forEach((one) => {
+          if (action.type === 'politiciansQuery') {
+            // Since the politiciansQuery doesn't return all of the
+            // attached lists that we get from politicianRetrieve,
+            // don't replace a politician if it has already been retrieved
+            if (!(one.politician_we_vote_id in allCachedPoliticians)) {
+              allCachedPoliticians[one.politician_we_vote_id] = one;
+            }
+            politicianQueryResultsWeVoteIds.push(one.politician_we_vote_id);
+          } else {
+            allCachedPoliticians[one.we_vote_id] = one;
+            politicianQueryResultsWeVoteIds.push(one.we_vote_id);
+          }
+          localPoliticianList.push(one);
+        });
+
+        return {
+          ...state,
+          allCachedPoliticians,
+          politicianListsByOfficeWeVoteId,
+          politicianQueryResultsWeVoteIds,
+        };
+
+      case 'voterCanEditPolitician':
+        // console.log('PoliticianStore voterCanEditPolitician: ', action.payload);
+        if (action.payload === undefined) {
+          return state;
+        } else {
+          revisedState = state;
+          const politicianWeVoteId = action.payload;
+          if (!arrayContains(politicianWeVoteId, voterOwnedPoliticianWeVoteIds)) {
+            voterOwnedPoliticianWeVoteIds.push(politicianWeVoteId);
+            revisedState = { ...revisedState, voterOwnedPoliticianWeVoteIds };
+          }
+          return revisedState;
+        }
+
+      case 'voterSignOut':
+        // console.log('PoliticianStore voterSignOut, state:', state);
+        if (!action.res || !action.res.success) return state;
+        revisedState = state;
+        voterSpecificData = this.resetVoterSpecificData();
+        revisedState = { ...revisedState, voterSpecificData };
+        return revisedState;
+
+      case 'error-politicianRetrieve' || 'error-positionListForBallotItem':
+        console.log(action);
+        return state;
+
+      default:
+        return state;
+    }
+  }
+}
+
+export default new PoliticianStore(Dispatcher);

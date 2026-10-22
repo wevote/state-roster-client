@@ -1,0 +1,6 @@
+dist
+node_modules
+# The common folder is copied from WebApp, where it is linted. Some of its files import WebApp files that do not exist here.
+src/js/common
+src/js/config.js
+src/js/config-template.js
