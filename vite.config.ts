@@ -11,4 +11,15 @@ export default defineConfig({
   plugins: [react(), commonjs()],
   server: { port: 5173, proxy: api },
   preview: { proxy: api },
+  build: {
+    rollupOptions: {
+      output: {
+        // Libraries change less often than the console, so they get their own chunks and stay cached between deploys.
+        manualChunks: {
+          mui: ['@mui/material', '@emotion/react', '@emotion/styled'],
+          react: ['react', 'react-dom', 'react-router', '@tanstack/react-query', 'react-helmet-async'],
+        },
+      },
+    },
+  },
 });

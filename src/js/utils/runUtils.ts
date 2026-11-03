@@ -1,6 +1,12 @@
 // runUtils.ts
 import type { Job, Run, RunKind } from '../react-query/apiTypes';
 
+// Each capture and pass records the state-roster-pipeline commit its code was built from (BuildVersion in the pipeline).
+const PIPELINE_REPO_URL = 'https://github.com/vote-usa/state-roster-pipeline';
+
+/** The pipeline commit on GitHub. A commit that was never pushed has no page there. */
+export const pipelineCommitUrl = (gitSha: string) => `${PIPELINE_REPO_URL}/commit/${gitSha}`;
+
 export const isActive = (job: Job) => job.status === 'queued' || job.status === 'running';
 
 /** Who started a retrieve or a normalization. Nothing runs on a schedule yet. */
