@@ -14,6 +14,7 @@ export interface Capture {
 export interface Fetch {
   seq: number; role: string | null; keys: Record<string, unknown> | null; method: string; url: string;
   status: number | null; contentType: string | null; bytes: number | null; durationMs: number; error: string | null;
+  hasPayload: boolean;
 }
 
 export interface Source { group: string; url: string; format: string; hashed: boolean }
