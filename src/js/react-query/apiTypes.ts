@@ -7,7 +7,7 @@ export type RunKind = 'capture' | 'normalize' | 'both';
 export interface Capture {
   captureId: number; stateCode: string; year: number; status: Status; source: string; requestedBy: string;
   startedAt: string; finishedAt: string | null; wayback: string | null; rawDir: string | null;
-  fetchCount: number; rawBytes: number; gitSha: string | null; logText: string | null; errorText: string | null;
+  fetchCount: number; rawBytes: number; version: string | null; gitSha: string | null; logText: string | null; errorText: string | null;
   filesPresent: boolean;
 }
 
@@ -21,7 +21,7 @@ export interface NextRun { after: string | null; reason: string | null }
 
 export interface Pass {
   passId: number; captureId: number | null; stateCode: string; year: number; status: Status; source: string;
-  requestedBy: string; requestedAt: string; finishedAt: string | null; electionFilter: string | null; gitSha: string | null;
+  requestedBy: string; requestedAt: string; finishedAt: string | null; electionFilter: string | null; version: string | null; gitSha: string | null;
   runCount: number; candidateCount: number; measureCount: number; countyBallotCount: number;
   countyDirectoryCount: number; proposedMeasureCount: number; unassignedRowCount: number;
   gaps: string[]; nextRun: NextRun | null; sources: Source[];

@@ -9,6 +9,7 @@ import RunCountyBallots from '../components/Run/RunCountyBallots';
 import RunMeasures from '../components/Run/RunMeasures';
 import { mono } from '../components/Style/textStyles';
 import CaptureLink from '../components/Widgets/CaptureLink';
+import CodeVersion from '../components/Widgets/CodeVersion';
 import Empty from '../components/Widgets/Empty';
 import Facts from '../components/Widgets/Facts';
 import Log from '../components/Widgets/Log';
@@ -52,7 +53,7 @@ export default function RunPage () {
           ['Date Created', minuteOf(r.createdAt)],
           ['Built By', <>pass {p.passId} of <CaptureLink id={p.captureId} /></>],
           ['Requested By', p.requestedBy],
-          ['Version', p.gitSha ? p.gitSha.slice(0, 7) : 'unknown'],
+          ['Version', <CodeVersion version={p.version} gitSha={p.gitSha} />],
           ['Pass Also Stored', `${numberWithCommas(p.countyDirectoryCount)} county offices, ${numberWithCommas(p.proposedMeasureCount)} proposed measures, ${numberWithCommas(p.unassignedRowCount)} unassigned rows`],
         ]}
         />
