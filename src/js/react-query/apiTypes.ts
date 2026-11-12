@@ -70,3 +70,26 @@ export interface StartJob {
   stateCode: string; year: number; kind: RunKind; normalizeCaptureId: number | null;
   electionFilter: string | null; requestedBy: string;
 }
+
+// URLs a person keeps for a region: a state, or counties and a city in it. They are for human reference;
+// the collectors read their own links (SourceLinks), not these.
+export type UrlType = 'official_landing' | 'ballotpedia' | 'candidate_data' | 'measure_data';
+
+export interface RegionUrl {
+  urlId: number; stateCode: string; counties: string[]; city: string | null; url: string; urlType: UrlType;
+  updatedAt: string; updatedBy: string; lastUsedAt: string | null;
+}
+
+/** One saved state of a URL, newest first in a history. A deleted URL's last version has action 'deleted'. */
+export interface UrlVersion {
+  versionId: number; urlId: number; action: 'added' | 'edited' | 'reverted' | 'deleted';
+  stateCode: string; counties: string[]; city: string | null; url: string; urlType: UrlType | null;
+  editedAt: string; editedBy: string; lastUsedAt: string | null;
+}
+
+/** A state's URLs, and the county names its counties picker offers. */
+export interface StateUrls { urls: RegionUrl[]; counties: string[] }
+
+export interface SaveUrl {
+  stateCode: string; counties: string[]; city: string | null; url: string; urlType: UrlType; editedBy: string;
+}

@@ -5,18 +5,14 @@ import GridOnOutlined from '@mui/icons-material/GridOnOutlined';
 import PictureAsPdfOutlined from '@mui/icons-material/PictureAsPdfOutlined';
 import { renderLog } from '../../common/utils/logging';
 import type { Source } from '../../react-query/apiTypes';
+import { shortUrl } from '../../utils/regionUrls';
 
 // The source groups a pass reports, as the two URL columns show them. Overview is where a person
 // would look (the election index, and the verification-only link). Roster is what the collector parses.
 const OVERVIEW: Record<string, string> = { elections: '', verification_only: '' };
 const ROSTER: Record<string, string> = { statewide_candidates: 'C', statewide_measures: 'M', local_measures: 'M' };
 
-function shortUrl (url: string): string {
-  const short = url.replace(/^https?:\/\/(www\.)?/, '');
-  return short.length > 30 ? `${short.slice(0, 29)}…` : short;
-}
-
-function formatIcon (format: string) {
+export function formatIcon (format: string) {
   const f = format.toLowerCase();
   if (f.includes('pdf')) return <PictureAsPdfOutlined fontSize="inherit" />;
   if (f.includes('csv') || f.includes('xls')) return <GridOnOutlined fontSize="inherit" />;

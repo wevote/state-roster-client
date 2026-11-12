@@ -27,3 +27,6 @@ export function bytes (n: number | null): string {
 
 /** An API timestamp as "2026-10-21 14:05". */
 export const minuteOf = (iso: string) => iso.slice(0, 16).replace('T', ' ');
+
+/** An API timestamp as "October 12, 2026", in UTC like minuteOf, so a date-only value never shifts a day. */
+export const longDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });

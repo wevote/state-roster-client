@@ -8,13 +8,8 @@ import type { RunKind, StateDetail, StateSummary } from '../../react-query/apiTy
 import { startJob, useApi } from '../../react-query/RosterQuery';
 import { kindLabel } from '../../utils/runUtils';
 import { ago, bytes } from '../../utils/timeAndSizeFormat';
+import { saveName, savedName } from '../../utils/yourName';
 import Pending from '../Widgets/Pending';
-
-const NAME_KEY = 'roster-console.requested-by';
-
-function savedName (): string {
-  try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; }
-}
 
 const KINDS: [RunKind, string][] = [
   ['both', 'Fetch every source page, then build one run per election from it.'],
@@ -49,7 +44,7 @@ export default function StartRunDialog ({ preset, onClose }: { preset: StartRunP
     e.preventDefault();
     setSending(true);
     setRefusal(null);
-    try { localStorage.setItem(NAME_KEY, name); } catch { /* the name is only a convenience */ }
+    saveName(name);
     try {
       await startJob({
         stateCode,
