@@ -84,6 +84,7 @@ export async function signIn (userName: string, password: string) {
 /** Signs out and forgets everything this browser loaded while signed in. */
 export async function signOut () {
   await send<null>('POST', '/logout');
-  queryClient.clear();
+  // Clearing the whole cache would also drop the query App watches for who is signed in, so App would never see the sign-out.
   signedOut();
+  queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== ME[0] });
 }
