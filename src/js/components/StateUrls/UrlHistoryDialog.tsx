@@ -7,7 +7,6 @@ import type { UrlVersion } from '../../react-query/apiTypes';
 import { revertUrl, useApi } from '../../react-query/RosterQuery';
 import { changedFields, currentVersions, shortUrl, urlTypeLabel, type VersionField } from '../../utils/regionUrls';
 import { longDate, minuteOf } from '../../utils/timeAndSizeFormat';
-import { savedName } from '../../utils/yourName';
 import Empty from '../Widgets/Empty';
 import Pending from '../Widgets/Pending';
 import invalidateUrls from './urlQueries';
@@ -34,7 +33,7 @@ export default function UrlHistoryDialog ({ title, path, stateNames, onClose }: 
     setReverting(v.versionId);
     setRefusal(null);
     try {
-      await revertUrl(v.urlId, v.versionId, savedName() || 'console');
+      await revertUrl(v.urlId, v.versionId);
       await invalidateUrls(queryClient);
     } catch (error) {
       setRefusal(error instanceof Error ? error.message : String(error));

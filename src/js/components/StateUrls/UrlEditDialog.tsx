@@ -7,7 +7,6 @@ import { renderLog } from '../../common/utils/logging';
 import type { RegionUrl, StateSummary, StateUrls, UrlType } from '../../react-query/apiTypes';
 import { saveUrl, useApi } from '../../react-query/RosterQuery';
 import { COLUMN_LABEL, URL_TYPES, urlProblem, type UrlColumn } from '../../utils/regionUrls';
-import { saveName, savedName } from '../../utils/yourName';
 import Pending from '../Widgets/Pending';
 import UrlHistoryDialog from './UrlHistoryDialog';
 import invalidateUrls from './urlQueries';
@@ -29,9 +28,6 @@ export default function UrlEditDialog ({ preset, onClose }: { preset: UrlEditPre
   const [city, setCity] = useState(preset.editing?.city ?? '');
   const [url, setUrl] = useState(preset.editing?.url ?? '');
   const [urlType, setUrlType] = useState<UrlType>(preset.editing?.urlType ?? URL_TYPES.find((t) => t.column === preset.column)!.value);
-  // Asked for only when this browser has no name yet, since every edit records who made it.
-  const [askName] = useState(savedName() === '');
-  const [editedBy, setEditedBy] = useState(savedName);
   const [touched, setTouched] = useState(false);
   const [sending, setSending] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -41,7 +37,6 @@ export default function UrlEditDialog ({ preset, onClose }: { preset: UrlEditPre
   const countyOptions = region.data?.counties ?? [];
   const cityOptions = [...new Set((region.data?.urls ?? []).map((u) => u.city).filter((c): c is string => !!c))].sort();
   const problem = urlProblem(url);
-  const name = editedBy.trim();
   const stateNames = Object.fromEntries((states.data ?? []).map((s) => [s.code, s.name]));
 
   function pickState (code: string) {
@@ -54,12 +49,11 @@ export default function UrlEditDialog ({ preset, onClose }: { preset: UrlEditPre
   async function submit (e: FormEvent) {
     e.preventDefault();
     setTouched(true);
-    if (problem || name === '') return;
+    if (problem) return;
     setSending(true);
     setRefusal(null);
-    saveName(name);
     try {
-      await saveUrl(editing?.urlId ?? null, { stateCode, counties, city: city.trim() || null, url: url.trim(), urlType, editedBy: name });
+      await saveUrl(editing?.urlId ?? null, { stateCode, counties, city: city.trim() || null, url: url.trim(), urlType });
       await invalidateUrls(queryClient);
       onClose();
     } catch (error) {
@@ -146,15 +140,6 @@ helperText={touched && problem}
                 </FormControl>
               </Box>
 
-              {askName && (
-                <TextField label="Your name"
-helperText="Recorded on the edit"
-value={editedBy}
-onChange={(e) => setEditedBy(e.target.value)}
-                  error={touched && name === ''}
-sx={{ mt: 3, width: { xs: '100%', sm: '50%' } }}
-                />
-              )}
               {refusal && <Alert severity="error" sx={{ mt: 2 }}>{refusal}</Alert>}
             </>
           )}

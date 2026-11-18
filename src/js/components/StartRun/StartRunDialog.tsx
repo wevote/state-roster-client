@@ -8,7 +8,6 @@ import type { RunKind, StateDetail, StateSummary } from '../../react-query/apiTy
 import { startJob, useApi } from '../../react-query/RosterQuery';
 import { kindLabel } from '../../utils/runUtils';
 import { ago, bytes } from '../../utils/timeAndSizeFormat';
-import { saveName, savedName } from '../../utils/yourName';
 import Pending from '../Widgets/Pending';
 
 const KINDS: [RunKind, string][] = [
@@ -29,7 +28,6 @@ export default function StartRunDialog ({ preset, onClose }: { preset: StartRunP
   const [kind, setKind] = useState<RunKind>(preset.normalizeCaptureId ? 'normalize' : 'both');
   const [captureId, setCaptureId] = useState<number | null>(preset.normalizeCaptureId ?? null);
   const [electionFilter, setElectionFilter] = useState('');
-  const [requestedBy, setRequestedBy] = useState(savedName);
   const [sending, setSending] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const detail = useApi<StateDetail>(`/states/${stateCode || 'none'}`);
@@ -37,14 +35,12 @@ export default function StartRunDialog ({ preset, onClose }: { preset: StartRunP
   // Only a succeeded retrieve whose payloads are still on disk can be normalized.
   const usable = (detail.data?.code === stateCode ? detail.data.captures : []).filter((c) => c.status === 'succeeded' && c.filesPresent);
   const chosen = usable.find((c) => c.captureId === captureId) ?? usable[0];
-  const name = requestedBy.trim();
-  const blocked = sending || name === '' || stateCode === '' || (kind === 'normalize' && !chosen);
+  const blocked = sending || stateCode === '' || (kind === 'normalize' && !chosen);
 
   async function submit (e: FormEvent) {
     e.preventDefault();
     setSending(true);
     setRefusal(null);
-    saveName(name);
     try {
       await startJob({
         stateCode,
@@ -52,7 +48,6 @@ export default function StartRunDialog ({ preset, onClose }: { preset: StartRunP
         kind,
         normalizeCaptureId: kind === 'normalize' ? chosen!.captureId : null,
         electionFilter: kind !== 'capture' && electionFilter ? electionFilter : null,
-        requestedBy: name,
       });
       await queryClient.invalidateQueries({ queryKey: ['/jobs']});
       onClose();
@@ -119,7 +114,6 @@ disabled={kind === 'capture'}
                 onChange={(e) => setElectionFilter(e.target.value)}
 slotProps={{ inputLabel: { shrink: true } }}
               />
-              <TextField label="Your name" helperText="Recorded on the run" value={requestedBy} onChange={(e) => setRequestedBy(e.target.value)} />
             </Box>
 
             {refusal && <Alert severity="error" sx={{ mt: 2 }}>{refusal}</Alert>}

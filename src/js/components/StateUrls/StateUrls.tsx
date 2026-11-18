@@ -6,7 +6,6 @@ import { renderLog } from '../../common/utils/logging';
 import type { RegionUrl, Source, StateUrls as StateUrlsData } from '../../react-query/apiTypes';
 import { deleteUrl, useApi } from '../../react-query/RosterQuery';
 import { regionLabel, urlColumn, urlTypeLabel, type UrlColumn } from '../../utils/regionUrls';
-import { savedName } from '../../utils/yourName';
 import SourceLinks from '../Widgets/SourceLinks';
 import UrlEditDialog, { type UrlEditPreset } from './UrlEditDialog';
 import UrlHistoryDialog from './UrlHistoryDialog';
@@ -33,7 +32,7 @@ export default function StateUrls ({ code, name, sources }: { code: string; name
     setSending(true);
     setRefusal(null);
     try {
-      await deleteUrl(deleting!.urlId, savedName() || 'console');
+      await deleteUrl(deleting!.urlId);
       await invalidateUrls(queryClient);
       setDeleting(null);
     } catch (error) {
