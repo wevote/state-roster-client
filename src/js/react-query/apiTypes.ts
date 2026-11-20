@@ -68,7 +68,7 @@ export interface JobsData { jobs: Job[]; runs: Run[] }
 
 export interface StartJob {
   stateCode: string; year: number; kind: RunKind; normalizeCaptureId: number | null;
-  electionFilter: string | null; requestedBy: string;
+  electionFilter: string | null;
 }
 
 // URLs a person keeps for a region: a state, or counties and a city in it. They are for human reference;
@@ -91,5 +91,7 @@ export interface UrlVersion {
 export interface StateUrls { urls: RegionUrl[]; counties: string[] }
 
 export interface SaveUrl {
-  stateCode: string; counties: string[]; city: string | null; url: string; urlType: UrlType; editedBy: string;
+  stateCode: string; counties: string[]; city: string | null; url: string; urlType: UrlType;
 }
+
+export interface Me { userName: string }
