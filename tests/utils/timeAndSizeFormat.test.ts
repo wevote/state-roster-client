@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ago, bytes, duration, minuteOf } from '../../src/js/utils/timeAndSizeFormat';
+import { ago, bytes, duration, longDate, minuteOf } from '../../src/js/utils/timeAndSizeFormat';
 
 const NOW = new Date('2026-11-02T12:00:00Z');
 const before = (seconds: number) => new Date(NOW.getTime() - seconds * 1000).toISOString();
@@ -59,5 +59,12 @@ describe('bytes', () => {
 describe('minuteOf', () => {
   it('trims an API timestamp to the minute', () => {
     expect(minuteOf('2026-10-21T17:34:56Z')).toBe('2026-10-21 17:34');
+  });
+});
+
+describe('longDate', () => {
+  it('spells out the UTC date', () => {
+    expect(longDate('2026-10-15T00:00:00Z')).toBe('October 15, 2026');
+    expect(longDate('2026-10-02T23:30:00Z')).toBe('October 2, 2026');
   });
 });

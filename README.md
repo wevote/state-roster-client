@@ -64,7 +64,7 @@ The folders follow WeVote's [WebApp](../WebApp) and [weconnect-client](../weconn
 | `src/js/components/Style/consoleTheme.ts` | Material UI theme |
 | `src/js/contexts/StartRunContext.tsx` | Lets any page open the "Start a run" dialog |
 | `src/js/pages/` | One file per route |
-| `src/js/react-query/` | `RosterQuery.ts` (`useApi`, the polling fetch hook, and `startJob`) and `apiTypes.ts` (response types) |
+| `src/js/react-query/` | `RosterQuery.ts` (`useApi`, the polling fetch hook, `startJob`, and the URL edits `saveUrl`, `deleteUrl` and `revertUrl`) and `apiTypes.ts` (response types) |
 | `src/js/utils/` | Formatting and run helpers |
 | `src/js/config-template.js` | Template for `config.js` |
 | `node/initialSteps.js` | Creates `config.js` before dev and build |

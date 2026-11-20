@@ -4,12 +4,12 @@ import { Link as RouterLink, useParams } from 'react-router';
 import { renderLog } from '../common/utils/logging';
 import numberWithCommas from '../common/utils/numberWithCommas';
 import PassTable from '../components/State/PassTable';
+import StateUrls from '../components/StateUrls/StateUrls';
 import Empty from '../components/Widgets/Empty';
 import ErrorText from '../components/Widgets/ErrorText';
 import Facts from '../components/Widgets/Facts';
 import PageHeader from '../components/Widgets/PageHeader';
 import Pending from '../components/Widgets/Pending';
-import SourceLinks from '../components/Widgets/SourceLinks';
 import StatusText from '../components/Widgets/StatusText';
 import To from '../components/Widgets/To';
 import webAppConfig from '../config';
@@ -41,8 +41,7 @@ title={name}
       />
 
       <Paper variant="outlined" sx={{ p: 2.5, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 3 }}>
-        <Box sx={{ minWidth: 0 }}><Typography variant="h3" sx={{ mb: 1 }}>Overview URLs</Typography><SourceLinks sources={sources} kind="overview" /></Box>
-        <Box sx={{ minWidth: 0 }}><Typography variant="h3" sx={{ mb: 1 }}>Roster URLs</Typography><SourceLinks sources={sources} kind="roster" /></Box>
+        <StateUrls code={code} name={name} sources={sources} />
         <Box>
           <Typography variant="h3" sx={{ mb: 1 }}>Latest Retrieve</Typography>
           {latest ? <StatusText status={latest.status}>{ago(latest.startedAt)}</StatusText> : <Typography color="text.secondary">Never retrieved</Typography>}
