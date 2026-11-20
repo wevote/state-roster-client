@@ -1,4 +1,5 @@
-import { Box, Button, Paper, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { Box, Button, Link, Paper, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { type ReactNode } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useParams } from 'react-router';
 import { renderLog } from '../common/utils/logging';
@@ -15,13 +16,20 @@ import To from '../components/Widgets/To';
 import webAppConfig from '../config';
 import { useStartRun } from '../contexts/StartRunContext';
 import type { Capture, CaptureDetail } from '../react-query/apiTypes';
-import { useApi } from '../react-query/RosterQuery';
+import { payloadUrl, useApi } from '../react-query/RosterQuery';
 import { runType } from '../utils/runUtils';
 import { bytes, duration, minuteOf } from '../utils/timeAndSizeFormat';
 
 function payloads (c: Capture): string {
   if (c.filesPresent) return `on disk at data/${c.rawDir}`;
   return c.status === 'running' ? 'being written' : 'not on disk, so this retrieve cannot be normalized';
+}
+
+// Why a fetch has no saved data to view, or null when it does.
+function savedData (filesPresent: boolean, hasPayload: boolean): ReactNode {
+  if (!hasPayload) return <Typography component="span" color="text.secondary" sx={{ fontSize: 'inherit' }}>none</Typography>;
+  if (!filesPresent) return <Typography component="span" color="text.secondary" sx={{ fontSize: 'inherit' }}>pruned</Typography>;
+  return null;
 }
 
 export default function CapturePage () {
@@ -86,7 +94,7 @@ export default function CapturePage () {
       {fetches.length === 0 ? <Empty>{c.status === 'running' ? 'Fetch records are stored when the retrieve finishes.' : 'No fetches recorded.'}</Empty> : (
         <Box sx={{ overflowX: 'auto' }}>
           <Table size="small">
-            <TableHead><TableRow><TableCell align="right">#</TableCell><TableCell>Role</TableCell><TableCell>Keys</TableCell><TableCell>Request</TableCell><TableCell align="right">HTTP</TableCell><TableCell align="right">Size</TableCell><TableCell align="right">Time</TableCell></TableRow></TableHead>
+            <TableHead><TableRow><TableCell align="right">#</TableCell><TableCell>Role</TableCell><TableCell>Keys</TableCell><TableCell>Request</TableCell><TableCell align="right">HTTP</TableCell><TableCell align="right">Size</TableCell><TableCell align="right">Time</TableCell><TableCell>Saved data</TableCell></TableRow></TableHead>
             <TableBody>
               {fetches.map((f) => (
                 <TableRow key={f.seq} hover>
@@ -97,6 +105,9 @@ export default function CapturePage () {
                   <TableCell align="right" sx={{ color: f.status !== null && f.status < 400 ? undefined : 'error.main' }}>{f.status ?? 'none'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{bytes(f.bytes)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{f.durationMs} ms</TableCell>
+                  <TableCell>
+                    {savedData(c.filesPresent, f.hasPayload) ?? <Link href={payloadUrl(c.captureId, f.seq)} target="_blank" rel="noreferrer">View</Link>}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

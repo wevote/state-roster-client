@@ -27,10 +27,11 @@ If a page says "The API answered 503" or "Is it running?", the API is not runnin
 | --- | --- |
 | `npm start` (or `npm run dev`) | Dev server on port 5173 with hot reload |
 | `npm run lint` | ESLint with the same airbnb-based rules as WebApp and weconnect-client (`.eslintrc`) |
+| `npm test` | Unit tests in `tests/`, with Vitest |
 | `npm run build` | Type-checks with `tsc`, then builds to `dist/`. A type error fails the build. |
 | `npm run preview` | Serves the built `dist/` on port 5173. The Docker image runs this. |
 
-There are no tests yet. Run `npm run lint` and `npm run build` before pushing.
+Run `npm run lint`, `npm test` and `npm run build` before pushing.
 
 ## Config
 

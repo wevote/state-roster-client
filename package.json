@@ -6,9 +6,10 @@
   "scripts": {
     "build": "node node/initialSteps.js && tsc --noEmit && vite build",
     "dev": "node node/initialSteps.js && vite",
-    "lint": "eslint --format stylish --ext .js --ext .jsx --ext .ts --ext .tsx src",
+    "lint": "eslint --format stylish --ext .js --ext .jsx --ext .ts --ext .tsx src tests",
     "preview": "vite preview",
-    "start": "node node/initialSteps.js && vite"
+    "start": "node node/initialSteps.js && vite",
+    "test": "vitest run"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -39,6 +40,7 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
-    "vite-plugin-commonjs": "^0.10.4"
+    "vite-plugin-commonjs": "^0.10.4",
+    "vitest": "^3.2.7"
   }
 }

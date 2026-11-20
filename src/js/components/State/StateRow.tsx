@@ -17,13 +17,24 @@ function nextCheck (after: string | null | undefined): string | null {
   return days === 1 ? '1 day until next retrieve' : `Due for a retrieve since ${after}`;
 }
 
+const ROW_ACTION = 'state-row-action';
+const rowSx = {
+  '@media (hover: hover)': {
+    [`& .${ROW_ACTION}`]: { maxHeight: 0, opacity: 0, overflow: 'hidden', paddingTop: 0, transition: 'max-height 0.2s, opacity 0.2s, padding-top 0.2s' },
+    [`&:hover .${ROW_ACTION}, &:focus-within .${ROW_ACTION}`]: { maxHeight: '10em', opacity: 1, paddingTop: '6px' },
+    // Open only once the pointer rests on a row, so moving it across the table does not shift the rows.
+    [`&:hover .${ROW_ACTION}`]: { transitionDelay: '0.3s' },
+    [`&:focus-within .${ROW_ACTION}`]: { transitionDelay: '0s' },
+  },
+};
+
 /** One state's row on the Overview page. */
 export default function StateRow ({ state: s, onStart }: { state: StateSummary; onStart: () => void }) {
   renderLog('StateRow');
   const stateName = { fontSize: '1.35rem', fontWeight: 500, whiteSpace: 'nowrap' };
   const next = nextCheck(s.nextRun?.after);
   return (
-    <TableRow hover>
+    <TableRow hover sx={rowSx}>
       <TableCell><To to={`/states/${s.code}`} sx={stateName}>{s.name}</To></TableCell>
       <TableCell><SourceLinks sources={s.sources} kind="overview" /></TableCell>
       <TableCell><SourceLinks sources={s.sources} kind="roster" /></TableCell>
@@ -31,7 +42,7 @@ export default function StateRow ({ state: s, onStart }: { state: StateSummary; 
         {s.lastCapture ?
           <StatusText status={s.lastCapture.status}>{ago(s.lastCapture.startedAt)}</StatusText> :
           <Typography color="text.secondary" sx={{ fontSize: '0.8rem' }}>Never retrieved</Typography>}
-        <Box sx={{ fontSize: '0.8rem', mt: 0.75, lineHeight: 1.7 }}>
+        <Box className={ROW_ACTION} sx={{ fontSize: '0.8rem', pt: 0.75, lineHeight: 1.7 }}>
           {s.lastCapture && <div><To to={`/retrieves/${s.lastCapture.captureId}`}>View Log</To></div>}
           {next && <Tooltip title={s.nextRun?.reason ?? ''}><div>{next}</div></Tooltip>}
           {/* MUI renders this Link as a <button>, so it is not an anchor used as a button. */}
@@ -53,17 +64,19 @@ export default function StateRow ({ state: s, onStart }: { state: StateSummary; 
       </TableCell>
       <TableCell>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <Stage label="Retrieve"
-status={s.lastCapture?.status ?? null}
+          <Stage
+            label="Retrieve"
+            status={s.lastCapture?.status ?? null}
             detail={s.lastCapture ? `Retrieve ${s.lastCapture.captureId}, ${s.lastCapture.status} ${ago(s.lastCapture.startedAt)}` : 'Never run'}
           />
-          <Stage label="Normalize"
-status={s.lastPass?.status ?? null}
+          <Stage
+            label="Normalize"
+            status={s.lastPass?.status ?? null}
             detail={s.lastPass ? `Pass ${s.lastPass.passId} of retrieve ${s.lastPass.captureId}, ${s.lastPass.status} ${ago(s.lastPass.requestedAt)}` : 'Never run'}
           />
         </Box>
         {s.gapCount !== null && s.gapCount > 0 && <Typography color="error" sx={{ fontSize: '0.8rem', fontWeight: 600 }}>{s.gapCount} {s.gapCount === 1 ? 'gap' : 'gaps'}</Typography>}
-        <Box sx={{ fontSize: '0.8rem', mt: 0.5 }}><To to={`/states/${s.code}`}>Show All Results</To></Box>
+        <Box className={ROW_ACTION} sx={{ fontSize: '0.8rem', pt: 0.5 }}><To to={`/states/${s.code}`}>Show All Results</To></Box>
       </TableCell>
     </TableRow>
   );

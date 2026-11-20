@@ -24,6 +24,9 @@ export function useApi<T> (path: string, refetch?: number | ((data: T | undefine
   });
 }
 
+/** Where a fetch's saved payload is served, exactly as the source sent it. Opened as a page, not fetched. */
+export const payloadUrl = (captureId: number, seq: number) => `/api/captures/${captureId}/fetches/${seq}/payload`;
+
 /** Queues a run. Rejects with the API's reason when the request is refused. */
 export async function startJob (request: StartJob): Promise<Job> {
   httpLog('HTTP POST /api/jobs', request);
