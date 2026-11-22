@@ -2,7 +2,7 @@
 // Every request the console makes goes through here, to relative /api/... paths that Vite forwards to the API.
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { httpLog } from '../common/utils/logging';
-import type { Job, StartJob } from './apiTypes';
+import type { Job, Ruleset, SampleResult, SaveRuleset, StartJob, TryRuleset } from './apiTypes';
 
 async function get<T> (path: string): Promise<T> {
   httpLog(`HTTP GET /api${path}`);
@@ -32,6 +32,58 @@ export async function startJob (request: StartJob): Promise<Job> {
   httpLog('HTTP POST /api/jobs', request);
   const response = await fetch('/api/jobs', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.error ?? `The API answered ${response.status}.`);
+  return body;
+}
+
+/** Runs steps over each sample on its own, returning a result per sample. Rejects with the API's reason when the request is refused. */
+export async function tryRuleset (request: TryRuleset): Promise<SampleResult[]> {
+  httpLog('HTTP POST /api/rulesets/try', request);
+  const response = await fetch('/api/rulesets/try', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.error ?? `The API answered ${response.status}.`);
+  return body.results;
+}
+
+/** Saves a new ruleset. Rejects with the API's reason when the request is refused. */
+export async function createRuleset (request: SaveRuleset): Promise<Ruleset> {
+  httpLog('HTTP POST /api/rulesets', request);
+  const response = await fetch('/api/rulesets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.error ?? `The API answered ${response.status}.`);
+  return body;
+}
+
+/** Activates or deactivates (archives) a saved ruleset. Rejects with the API's reason when the request is refused. */
+export async function setRulesetActive (rulesetId: number, isActive: boolean): Promise<Ruleset> {
+  httpLog(`HTTP PUT /api/rulesets/${rulesetId}/active`, { isActive });
+  const response = await fetch(`/api/rulesets/${rulesetId}/active`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isActive }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.error ?? `The API answered ${response.status}.`);
+  return body;
+}
+
+/** Replaces a saved ruleset's name, description and steps. Rejects with the API's reason when the request is refused. */
+export async function updateRuleset (rulesetId: number, request: SaveRuleset): Promise<Ruleset> {
+  httpLog(`HTTP PUT /api/rulesets/${rulesetId}`, request);
+  const response = await fetch(`/api/rulesets/${rulesetId}`, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   });

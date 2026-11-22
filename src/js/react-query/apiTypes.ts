@@ -70,3 +70,15 @@ export interface StartJob {
   stateCode: string; year: number; kind: RunKind; normalizeCaptureId: number | null;
   electionFilter: string | null; requestedBy: string;
 }
+
+export interface TransformParam { name: string; required: boolean; default: string | null }
+export interface TransformKind { name: string; summary: string; params: TransformParam[] }
+export interface TransformStep { kind: string; params: Record<string, string> }
+export interface Ruleset {
+  rulesetId: number; name: string; description: string | null; isActive: boolean; steps: TransformStep[];
+  createdAt: string; updatedAt: string;
+}
+export interface RulesetSummary { rulesetId: number; name: string; isActive: boolean }
+export interface SaveRuleset { name: string; description: string | null; steps: TransformStep[] }
+export interface TryRuleset { steps: TransformStep[]; samples: string[] }
+export interface SampleResult { value: string | null; error: string | null }

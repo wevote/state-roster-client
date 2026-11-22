@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node node/initialSteps.js && tsc --noEmit && vite build",
     "dev": "node node/initialSteps.js && vite",
-    "lint": "eslint --format stylish --ext .js --ext .jsx --ext .ts --ext .tsx src tests",
+    "lint": "node node/initialSteps.js && eslint --format stylish --ext .js --ext .jsx --ext .ts --ext .tsx src tests",
     "preview": "vite preview",
     "start": "node node/initialSteps.js && vite",
     "test": "vitest run"
