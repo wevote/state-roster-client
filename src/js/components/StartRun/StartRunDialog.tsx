@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { renderLog } from '../../common/utils/logging';
-import type { StartRunPreset } from '../../contexts/StartRunContext';
 import type { RunKind, StateDetail, StateSummary } from '../../react-query/apiTypes';
 import { startJob, useApi } from '../../react-query/RosterQuery';
 import { kindLabel } from '../../utils/runUtils';
@@ -21,6 +20,8 @@ const KINDS: [RunKind, string][] = [
   ['capture', 'Fetch and save the source pages. Nothing is parsed yet.'],
   ['normalize', 'Rebuild runs from saved pages. No network, and the year comes from the retrieve.'],
 ];
+
+export interface StartRunPreset { stateCode?: string; normalizeCaptureId?: number }
 
 export default function StartRunDialog ({ preset, onClose }: { preset: StartRunPreset; onClose: () => void }) {
   renderLog('StartRunDialog');

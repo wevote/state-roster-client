@@ -5,6 +5,7 @@ import type { JobsData } from '../../react-query/apiTypes';
 import { useApi } from '../../react-query/RosterQuery';
 import { isActive } from '../../utils/runUtils';
 import { navy } from '../Style/consoleTheme';
+import { setShowFindRulesetModal, setShowRulesetModal } from './AppModals';
 
 const navSx = {
   color: 'rgba(255,255,255,0.75)',
@@ -25,6 +26,8 @@ export default function Header () {
           <Button component={NavLink} to="/activity" sx={navSx}>
             <Badge badgeContent={active} color="info" sx={{ '& .MuiBadge-badge': { right: -10 } }}>Activity</Badge>
           </Button>
+          <Button onClick={() => setShowRulesetModal(true)} sx={navSx}>Add Ruleset</Button>
+          <Button onClick={() => setShowFindRulesetModal(true)} sx={navSx}>Edit Ruleset</Button>
         </Box>
       </Toolbar>
     </AppBar>

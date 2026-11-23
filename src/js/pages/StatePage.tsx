@@ -3,6 +3,7 @@ import { Helmet } from 'react-helmet-async';
 import { Link as RouterLink, useParams } from 'react-router';
 import { renderLog } from '../common/utils/logging';
 import numberWithCommas from '../common/utils/numberWithCommas';
+import { setShowStartRunModal } from '../components/Navigation/AppModals';
 import PassTable from '../components/State/PassTable';
 import Empty from '../components/Widgets/Empty';
 import ErrorText from '../components/Widgets/ErrorText';
@@ -13,7 +14,6 @@ import SourceLinks from '../components/Widgets/SourceLinks';
 import StatusText from '../components/Widgets/StatusText';
 import To from '../components/Widgets/To';
 import webAppConfig from '../config';
-import { useStartRun } from '../contexts/StartRunContext';
 import type { StateDetail } from '../react-query/apiTypes';
 import { useApi } from '../react-query/RosterQuery';
 import { electionKey, electionsFrom, runType } from '../utils/runUtils';
@@ -22,7 +22,6 @@ import { ago, bytes, duration, minuteOf } from '../utils/timeAndSizeFormat';
 export default function StatePage () {
   renderLog('StatePage');
   const { code = '' } = useParams();
-  const startRun = useStartRun();
   const state = useApi<StateDetail>(`/states/${code}`, 5000);
   if (!state.data) return <Pending query={state} />;
 
@@ -37,7 +36,7 @@ export default function StatePage () {
       <Helmet><title>{`${name} - ${webAppConfig.NAME_FOR_BROWSER_TAB_TITLE}`}</title></Helmet>
       <PageHeader crumbs={[['National – US States', '/']]}
 title={name}
-        actions={<Button variant="contained" size="large" onClick={() => startRun({ stateCode: code })}>Start a run</Button>}
+        actions={<Button variant="contained" size="large" onClick={() => setShowStartRunModal(true, { stateCode: code })}>Start a run</Button>}
       />
 
       <Paper variant="outlined" sx={{ p: 2.5, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 3 }}>
@@ -87,7 +86,7 @@ title={name}
               <StatusText status={c.status} />
               <Box sx={{ flex: 1 }} />
               {c.status === 'succeeded' && (c.filesPresent ?
-                <Button variant="contained" onClick={() => startRun({ stateCode: code, normalizeCaptureId: c.captureId })}>Normalize</Button> :
+                <Button variant="contained" onClick={() => setShowStartRunModal(true, { stateCode: code, normalizeCaptureId: c.captureId })}>Normalize</Button> :
                 <StatusText status="pruned" />)}
             </Stack>
             <Facts items={[

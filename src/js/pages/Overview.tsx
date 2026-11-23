@@ -6,13 +6,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { renderLog } from '../common/utils/logging';
+import { setShowStartRunModal } from '../components/Navigation/AppModals';
 import StateRow from '../components/State/StateRow';
 import PageHeader from '../components/Widgets/PageHeader';
 import Pending from '../components/Widgets/Pending';
 import StatusText from '../components/Widgets/StatusText';
 import To from '../components/Widgets/To';
 import webAppConfig from '../config';
-import { useStartRun } from '../contexts/StartRunContext';
 import type { JobsData, StateSummary } from '../react-query/apiTypes';
 import { useApi } from '../react-query/RosterQuery';
 import { isActive, kindLabel } from '../utils/runUtils';
@@ -20,7 +20,6 @@ import { duration } from '../utils/timeAndSizeFormat';
 
 export default function Overview () {
   renderLog('Overview');
-  const startRun = useStartRun();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const states = useApi<StateSummary[]>('/states', 5000);
@@ -54,7 +53,7 @@ export default function Overview () {
       />
 
       <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
-        <Button variant="outlined" size="large" onClick={() => startRun({})}>Start a run</Button>
+        <Button variant="outlined" size="large" onClick={() => setShowStartRunModal(true)}>Start a run</Button>
       </Stack>
 
       {active.length > 0 && (
@@ -84,7 +83,7 @@ export default function Overview () {
               </TableRow>
             </TableHead>
             <TableBody>
-              {implemented.map((s) => <StateRow key={s.code} state={s} onStart={() => startRun({ stateCode: s.code })} />)}
+              {implemented.map((s) => <StateRow key={s.code} state={s} onStart={() => setShowStartRunModal(true, { stateCode: s.code })} />)}
             </TableBody>
           </Table>
           {shown.length === 0 && <Typography color="text.secondary" sx={{ py: 2 }}>No state matches “{search}”.</Typography>}

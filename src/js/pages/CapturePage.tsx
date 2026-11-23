@@ -4,6 +4,7 @@ import { Helmet } from 'react-helmet-async';
 import { useParams } from 'react-router';
 import { renderLog } from '../common/utils/logging';
 import numberWithCommas from '../common/utils/numberWithCommas';
+import { setShowStartRunModal } from '../components/Navigation/AppModals';
 import { mono } from '../components/Style/textStyles';
 import Empty from '../components/Widgets/Empty';
 import ErrorText from '../components/Widgets/ErrorText';
@@ -14,7 +15,6 @@ import Pending from '../components/Widgets/Pending';
 import StatusText from '../components/Widgets/StatusText';
 import To from '../components/Widgets/To';
 import webAppConfig from '../config';
-import { useStartRun } from '../contexts/StartRunContext';
 import type { Capture, CaptureDetail } from '../react-query/apiTypes';
 import { payloadUrl, useApi } from '../react-query/RosterQuery';
 import { runType } from '../utils/runUtils';
@@ -35,7 +35,6 @@ function savedData (filesPresent: boolean, hasPayload: boolean): ReactNode {
 export default function CapturePage () {
   renderLog('CapturePage');
   const { id = '' } = useParams();
-  const startRun = useStartRun();
   const detail = useApi<CaptureDetail>(`/captures/${id}`, (data) => (data?.capture.status === 'running' ? 2000 : false));
   if (!detail.data) return <Pending query={detail} />;
 
@@ -48,7 +47,7 @@ export default function CapturePage () {
       <PageHeader
         crumbs={[['National – US States', '/'], [c.stateCode, `/states/${c.stateCode}`]]}
         title={<>Retrieve {c.captureId} <StatusText status={c.status} /></>}
-        actions={canNormalize && <Button variant="contained" size="large" onClick={() => startRun({ stateCode: c.stateCode, normalizeCaptureId: c.captureId })}>Normalize this retrieve</Button>}
+        actions={canNormalize && <Button variant="contained" size="large" onClick={() => setShowStartRunModal(true, { stateCode: c.stateCode, normalizeCaptureId: c.captureId })}>Normalize this retrieve</Button>}
       />
 
       <Paper variant="outlined" sx={{ p: 2.5 }}>
